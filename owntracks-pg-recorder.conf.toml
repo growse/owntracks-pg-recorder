@@ -1,0 +1,12 @@
+dbHost = ''
+dbName = ''
+dbPassword = ''
+dbUser = ''
+databaseMigrationsPath = 'databasemigrations/'
+reverseGeocodeApiUrl = ''
+geocodeApiUrl = ''
+port = 3030
+production = false
+MQTTURL = 'mqtt://localhost:1883'
+MQTTUsername = ''
+MQTTPassword = ""

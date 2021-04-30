@@ -1,7 +1,7 @@
 pull_request_rules:
   - name: Automatic merge on approval
     conditions:
-      - "check-success=Build, package and upload"
+      - "check-success=Build"
     actions:
       merge:
         method: rebase

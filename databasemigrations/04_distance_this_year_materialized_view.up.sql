@@ -8,8 +8,8 @@ FROM ( SELECT st_distance(locations.point, lag(locations.point, 1, locations.poi
        WHERE date_part('year'::text, date(timezone('UTC'::text, locations.devicetimestamp))::timestamp without time zone) = date_part('year'::text, now())) a
 WITH DATA;
 
-ALTER TABLE public.locations_distance_this_year
-    OWNER TO owntracks;
+-- ALTER TABLE public.locations_distance_this_year
+--     OWNER TO owntracks;
 
 alter table public.locations drop column distance;
 

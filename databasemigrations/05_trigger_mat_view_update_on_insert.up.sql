@@ -11,8 +11,8 @@ begin
 end
 $$;
 
-ALTER FUNCTION public.location_update_distance_view()
-    OWNER TO owntracks;
+-- ALTER FUNCTION public.location_update_distance_view()
+--     OWNER TO owntracks;
 
 
 create trigger refresh_mat_view

@@ -65,11 +65,11 @@ func main() {
 	defer env.closeDatabase()
 
 	//Get the router
-	if env.configuration.Production {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
+	//if env.configuration.Production {
+	gin.SetMode(gin.ReleaseMode)
+	//} else {
+	//	gin.SetMode(gin.DebugMode)
+	//}
 	router := gin.Default()
 	env.BuildRoutes(router)
 	log.Printf("Listening on port %d", env.configuration.Port)
@@ -99,6 +99,11 @@ func (env *Env) setupDatabase(host string, user string, name string) {
 
 	db, err := sql.Open("postgres", connectionString)
 
+	if err != nil {
+		log.Fatalf("Error connecting to database: %v", err)
+	}
+
+	err = db.Ping()
 	if err != nil {
 		log.Fatalf("Error connecting to database: %v", err)
 	} else {

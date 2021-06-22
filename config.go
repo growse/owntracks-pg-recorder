@@ -13,49 +13,39 @@ type Configuration struct {
 	DatabaseMigrationsPath string
 	GeocodeApiURL          string
 	ReverseGeocodeApiURL   string
-	Production             bool
 	Domain                 string
 	Port                   int
 	MaxDBOpenConnections   int
-	MQTTURL                string `json:"mqttUrl"`
-	MQTTUsername           string `json:"mqttUsername"`
-	MQTTPassword           string `json:"mqttPassword"`
-	MQTTClientId           string `json:"mqttClientId"`
-	MQTTTopic              string `json:"mqttTopic"`
+	MQTTURL                string
+	MQTTUsername           string
+	MQTTPassword           string
+	MQTTClientId           string
+	MQTTTopic              string
 	EnableGeocodingCrawler bool
 }
 
 func getConfiguration() *Configuration {
-	viper.SetConfigName("owntracks-pg-recorder.conf")
-	viper.SetConfigType("toml")
+	viper.SetConfigName("owntracks-pg-recorder.toml")
 	viper.AddConfigPath(".")
-	viper.AddConfigPath("/etc/")
+	viper.AddConfigPath("/etc/owntracks-pg-recorder")
+	viper.AutomaticEnv()
+	viper.SetEnvPrefix("ot_pg_recorder")
+	viper.SetConfigType("toml")
 	//Config parsing
 	err := viper.ReadInConfig()
 	if err != nil {
 		log.Fatalf("Unable to open configuration file: %v", err)
 	}
 
-	defaultConfig := &Configuration{
-		DbUser:                 "",
-		DbName:                 "",
-		DbPassword:             "",
-		DbHost:                 "",
-		DatabaseMigrationsPath: "databasemigrations",
-		GeocodeApiURL:          "",
-		Production:             false,
-		Domain:                 "",
-		Port:                   8080,
-		MaxDBOpenConnections:   0,
-		MQTTURL:                "",
-		MQTTUsername:           "",
-		MQTTPassword:           "",
-		MQTTClientId:           "owntracks-pg-recorder",
-		MQTTTopic:              "owntracks/#",
-	}
-	err = viper.Unmarshal(&defaultConfig)
+	viper.SetDefault("MQTTTopic", "owntracks/#")
+	viper.SetDefault("MQTTClientId", "owntracks-pg-recorder")
+	viper.SetDefault("DatabaseMigrationsPath", "databasemigrations")
+
+	var config Configuration
+
+	err = viper.Unmarshal(&config)
 	if err != nil {
 		log.Fatalf("Unable to parse configuration file: %v", err)
 	}
-	return defaultConfig
+	return &config
 }

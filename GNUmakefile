@@ -1,5 +1,4 @@
-ARCH := amd64
-VERSION := 1.0.0
+VERSION := latest
 
 BUILD_NUMBER ?= 0
 TEST_COVERAGE := coverage.txt
@@ -8,26 +7,29 @@ LDFLAGS := "-w -s"
 
 export GOPATH := $(shell go env GOPATH)
 
-.PHONY: build
-build: $(addprefix dist/owntracks_pg_recorder_linux_, $(foreach a, $(ARCH), $(a)))
+.PHONY: build test docker clean deps
 
-.PHONY: test
+build: dist/owntracks_pg_recorder_linux_amd64
+
+dist/owntracks_pg_recorder_linux_amd64: *.go
+	go mod vendor -v
+	GOOS=linux GOARCH=amd64 go build -ldflags=$(LDFLAGS) -o dist/owntracks_pg_recorder_linux_amd64
+
+
+deps: vendor
+vendor: *.go
+	go mod vendor -v
+
 test: $(TEST_COVERAGE)
 
-$(TEST_COVERAGE):
+$(TEST_COVERAGE): *.go
 	go test -cover -covermode=count -coverprofile=$@ -v
 
-dist/owntracks_pg_recorder_linux_%:
-	go mod vendor -v
-	GOOS=linux GOARCH=$* go build -ldflags=$(LDFLAGS) -o dist/owntracks_pg_recorder_linux_$*
-	upx $@
-
-.PHONY: docker
 docker: build
-	docker build -t growse/owntracks-pg-recorder:$(VERSION) .
+	upx dist/owntracks_pg_recorder_linux_amd64
+	docker build -t ghcr.io/growse/owntracks-pg-recorder:$(VERSION) .
 
-.PHONY: clean
 clean:
 	rm -rf dist
 	rm -f $(TEST_COVERAGE)
-	rm -rf *.deb
+	rm -rf vendor

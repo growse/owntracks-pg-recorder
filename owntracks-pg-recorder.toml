@@ -1,0 +1,11 @@
+dbHost = 'localhost'
+dbName = 'locations'
+dbPassword = ""
+dbUser = 'owntracks-pg-recorder'
+databaseMigrationsPath = 'databasemigrations/'
+reverseGeocodeApiUrl = ''
+geocodeApiUrl = ''
+port = 3030
+MQTTURL = 'mqtt://localhost:1883'
+MQTTUsername = 'owntracks-pg-recorder'
+MQTTPassword = ""

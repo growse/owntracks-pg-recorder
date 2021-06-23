@@ -6,7 +6,7 @@ import (
 	"github.com/braintree/manners"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,7 +18,7 @@ var (
 )
 
 func InternalError(err error) {
-	log.Printf("%v", err)
+	log.WithError(err).Error("Internal Error")
 }
 
 type Env struct {
@@ -35,17 +35,17 @@ func main() {
 
 	go func() {
 		for sig := range c {
-			log.Printf("captured %v. Exiting...", sig)
+			log.WithField("signal", sig).Info("captured signal. Exiting...")
 			if quit != nil {
 				close(quit)
 			}
 			if GeocodingWorkQueue != nil {
 				close(GeocodingWorkQueue)
 			}
-			log.Print("Closing manners")
+			log.Info("Closing manners")
 			manners.Close()
 		}
-		log.Print("Quitting signal listener goroutine.")
+		log.Info("Quitting signal listener goroutine.")
 	}()
 
 	// Database time
@@ -72,20 +72,20 @@ func main() {
 	//}
 	router := gin.Default()
 	env.BuildRoutes(router)
-	log.Printf("Listening on port %d", env.configuration.Port)
+	log.WithField("httpPort", env.configuration.Port).Info("Listening on HTTP")
 	err := manners.ListenAndServe(fmt.Sprintf(":%d", env.configuration.Port), router)
 	if err != nil {
-		log.Fatalf("Error starting server: %v", err)
+		log.WithError(err).Fatal("Error starting server")
 	}
 }
 
 func (env *Env) closeDatabase() {
 	func() {
-		log.Println("Closing database")
+		log.Info("Closing database")
 		if env.db != nil {
 			err := env.db.Close()
 			if err != nil {
-				log.Fatalf("Error closing database: %v", err)
+				log.WithError(err).Fatal("Error closing database")
 			}
 		}
 	}()
@@ -100,17 +100,16 @@ func (env *Env) setupDatabase(host string, user string, name string) {
 	db, err := sql.Open("postgres", connectionString)
 
 	if err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
+		log.WithError(err).Fatal("Error connecting to database")
 	}
 
 	err = db.Ping()
 	if err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
+		log.WithError(err).Fatal("Error connecting to database")
 	} else {
-		log.Print("Database connected")
+		log.Info("Database connected")
 	}
 
-	log.Printf("Setting maximum db connections to %d", env.configuration.MaxDBOpenConnections)
 	db.SetMaxOpenConns(env.configuration.MaxDBOpenConnections)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(time.Hour)

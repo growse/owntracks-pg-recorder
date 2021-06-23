@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"github.com/eclipse/paho.mqtt.golang"
 	"github.com/lib/pq"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
 )
@@ -28,7 +28,9 @@ type MQTTMsg struct {
 }
 
 func (env *Env) SubscribeMQTT(quit <-chan bool) error {
-	log.Print("Connecting to MQTT")
+	log.Info("Connecting to MQTT")
+	mqtt.ERROR = log.StandardLogger()
+
 	var mqttClientOptions = mqtt.NewClientOptions()
 	if env.configuration.MQTTURL != "" {
 		mqttClientOptions.AddBroker(env.configuration.MQTTURL)
@@ -36,72 +38,78 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 		mqttClientOptions.AddBroker("tcp://localhost:1883")
 	}
 	if env.configuration.MQTTUsername != "" && env.configuration.MQTTPassword != "" {
-		log.Printf("Authenticating to MQTT as %v", env.configuration.MQTTUsername)
+		log.WithField("mqttUsername", env.configuration.MQTTUsername).Info("Authenticating to MQTT")
 		mqttClientOptions.SetUsername(env.configuration.MQTTUsername)
 		mqttClientOptions.SetPassword(env.configuration.MQTTPassword)
 	} else {
-		log.Print("Anon MQTT auth")
+		log.Info("Anon MQTT auth")
 	}
 	mqttClientOptions.SetClientID(env.configuration.MQTTClientId)
 	mqttClientOptions.SetAutoReconnect(true)
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)
+	mqttClientOptions.SetReconnectingHandler(reconnectingHandler)
+	mqttClientOptions.SetOnConnectHandler(func(client mqtt.Client) {
+		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.handler)
+		if err != nil {
+			log.WithField("topic", env.configuration.MQTTTopic).WithError(err).Error("Unable to subscribe to MQTT topic")
+		}
+		log.WithField("topic", env.configuration.MQTTTopic).Info("MQTT subscribed")
+	})
 	mqttClient := mqtt.NewClient(mqttClientOptions)
 
 	mqttClientToken := mqttClient.Connect()
 	defer mqttClient.Disconnect(250)
 
 	if mqttClientToken.Wait() && mqttClientToken.Error() != nil {
-		log.Printf("Error connecting to mqtt: %v", mqttClientToken.Error())
+		log.WithError(mqttClientToken.Error()).Error("Error connecting to mqtt")
 		return mqttClientToken.Error()
 	}
-	log.Print("MQTT Connected")
-
-	err := subscribeToMQTT(mqttClient, env.configuration.MQTTTopic, env.handler)
-	if err != nil {
-		return err
-	}
+	log.Info("MQTT Connected")
 
 	select {
 	case <-quit:
-		log.Print("MQTT Unsubscribing")
+		log.Info("MQTT Unsubscribing")
 		mqttUnsubscribeToken := mqttClient.Unsubscribe(env.configuration.MQTTTopic)
 		if mqttUnsubscribeToken.Wait() && mqttUnsubscribeToken.Error() != nil {
-			log.Printf("Error unsubscribing from mqtt: %v", mqttUnsubscribeToken.Error())
+			log.WithError(mqttUnsubscribeToken.Error()).Error("Error unsubscribing from mqtt")
 		}
 		mqttClient.Disconnect(100)
-		log.Print("Closing MQTT")
+		log.Info("Closing MQTT")
 		return nil
 	}
 }
 
 func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageHandler) error {
-	log.Printf("MQTT Subscribing to %v", topic)
+	log.WithField("topic", topic).Info("MQTT Subscribing")
 	mqttSubscribeToken := mqttClient.Subscribe(topic, 0, handler)
 	if mqttSubscribeToken.Wait() && mqttSubscribeToken.Error() != nil {
-		log.Printf("Error connecting to mqtt: %v", mqttSubscribeToken.Error())
+		log.WithError(mqttSubscribeToken.Error()).Error("Error connecting to mqtt")
 		mqttClient.Disconnect(250)
 		return mqttSubscribeToken.Error()
 	}
-	log.Printf("MQTT Subscribed to %v", topic)
+	log.WithField("topic", topic).Info("MQTT Subscribed")
 	return nil
 }
 
 var connectionLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
-	log.Printf("MQTT Connection lost: %v", err)
+	log.WithError(err).Error("MQTT Connection lost")
+}
+
+var reconnectingHandler mqtt.ReconnectHandler = func(client mqtt.Client, options *mqtt.ClientOptions) {
+	log.Info("MQTT Reconnecting")
 }
 
 func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
-	log.Printf("Received mqtt message from %v", msg.Topic())
+	log.WithField("mqttTopic", msg.Topic()).Info("Received mqtt message")
 	var locator MQTTMsg
 	err := json.Unmarshal(msg.Payload(), &locator)
 
 	if err != nil {
-		log.Printf("Error decoding MQTT message: %v", err)
-		log.Print(msg.Payload())
+		log.WithError(err).WithField("payload", msg.Payload()).Error("Error decoding MQTT message")
 		return
 	}
 	if locator.Type != "location" {
-		log.Printf("Received message is of type %v. Skipping", locator.Type)
+		log.WithField("msgType", locator.Type).Info("Skipping received message")
 		return
 	}
 
@@ -119,7 +127,6 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 
 func (env *Env) insertLocationToDatabase(locator MQTTMsg) {
 	defer timeTrack(time.Now())
-	newLocation := false
 	dozebool := bool(locator.Doze)
 	_, err := env.db.Exec(
 		"insert into locations "+
@@ -140,20 +147,18 @@ func (env *Env) insertLocationToDatabase(locator MQTTMsg) {
 		locator.User,
 		locator.Device,
 	)
-
-	switch i := err.(type) {
-	case nil:
-		newLocation = true
-		break
-	case *pq.Error:
-		log.Printf("Pg error: %v", err)
-		log.Printf("Location: %+v", locator)
-	default:
-		log.Printf("%T %v", err, err)
-		InternalError(i)
-		return
-	}
-	if newLocation {
+	if err == nil {
+		log.Info("Location persisted")
 		GeocodingWorkQueue <- true
+	} else {
+		switch err.(type) {
+		case nil:
+
+			break
+		case *pq.Error:
+		default:
+			log.WithError(err).WithField("location", locator).Error("Error writing location to database")
+			return
+		}
 	}
 }

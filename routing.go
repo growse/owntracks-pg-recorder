@@ -9,18 +9,18 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 	router.SetHTMLTemplate(BuildTemplates())
 
 	router.GET("", func(c *gin.Context) {
-		c.Redirect(301, "/where/")
+		c.Redirect(301, "/ui/")
 	})
 	router.GET("place/", func(c *gin.Context) {
 		c.HTML(200, "place", nil)
 	})
 	router.POST("place/", env.PlaceHandler)
 
-	otRecorderAPI := router.Group("data")
+	otRecorderAPI := router.Group("api")
 	{
-		restAPI := otRecorderAPI.Group("api/0")
+		restAPI := otRecorderAPI.Group("/0")
 		{
-			restAPI.GET("list", OTListUserHandler)
+			restAPI.GET("list", env.OTListUserHandler)
 			restAPI.GET("last", env.OTLastPosHandler)
 			restAPI.GET("locations", env.OTLocationsHandler)
 			restAPI.GET("version", OTVersionHandler)

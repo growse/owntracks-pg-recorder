@@ -7,7 +7,7 @@ LDFLAGS := "-w -s"
 
 export GOPATH := $(shell go env GOPATH)
 
-.PHONY: build test docker clean deps
+.PHONY: build test docker clean
 
 build: dist/owntracks_pg_recorder_linux_amd64
 
@@ -15,18 +15,13 @@ dist/owntracks_pg_recorder_linux_amd64: *.go
 	go mod vendor -v
 	GOOS=linux GOARCH=amd64 go build -ldflags=$(LDFLAGS) -o dist/owntracks_pg_recorder_linux_amd64
 
-
-deps: vendor
-vendor: *.go
-	go mod vendor -v
-
 test: $(TEST_COVERAGE)
 
 $(TEST_COVERAGE): *.go
 	go test -cover -covermode=count -coverprofile=$@ -v
 
 docker: build
-	upx dist/owntracks_pg_recorder_linux_amd64
+	upx dist/owntracks_pg_recorder_linux_amd64 || true
 	docker build -t ghcr.io/growse/owntracks-pg-recorder:$(VERSION) .
 
 clean:

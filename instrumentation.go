@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	log "github.com/sirupsen/logrus"
 	"runtime"
 	"time"
 )
@@ -11,5 +11,5 @@ func timeTrack(start time.Time) {
 	runtime.Callers(2, pc)
 	f := runtime.FuncForPC(pc[0])
 	elapsed := time.Since(start)
-	log.Printf("%s took %s", f.Name(), elapsed)
+	log.WithField("method", f.Name()).WithField("duration", elapsed).Info("elapsed")
 }

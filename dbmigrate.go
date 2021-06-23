@@ -4,7 +4,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"log"
+	log "github.com/sirupsen/logrus"
 )
 
 func (env *Env) DoDatabaseMigrations(migrationsPath string) {
@@ -12,17 +12,17 @@ func (env *Env) DoDatabaseMigrations(migrationsPath string) {
 	driver, err := postgres.WithInstance(env.db, &postgres.Config{MigrationsTable: "migrations"})
 
 	if err != nil {
-		log.Fatalf("Errors encountered creating migration driver: %v", err)
+		log.WithError(err).Fatal("Errors encountered creating migration driver")
 	}
 
 	m, err := migrate.NewWithDatabaseInstance("file://"+migrationsPath, env.configuration.DbName, driver)
 
 	if err != nil {
-		log.Fatalf("Errors encountered creating migrate instance : %v", err)
+		log.WithError(err).Fatal("Errors encountered creating migrate instance")
 	}
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Errors encountered migrating database: %v", err)
+		log.WithError(err).Fatal("Errors encountered migrating database")
 	}
-	log.Print("Database migration done")
+	log.Info("Database migration done")
 }

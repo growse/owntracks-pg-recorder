@@ -17,15 +17,17 @@ func TestLocationConvertsToOTLoc(t *testing.T) {
 		DeviceID:        "",
 		Geocoding:       "",
 	}
-	assert.Equal(t, location.toOT(), OTPos{
-		Tst:  1265169906,
-		Acc:  5,
-		Type: "location",
-		Alt:  0,
-		Lon:  20,
-		Vac:  0,
-		Vel:  0,
-		Lat:  15,
-		Addr: "",
+	assert.Equal(t, location.toOT("user", "device"), OTPos{
+		Tst:      1265169906,
+		Acc:      5,
+		Type:     "location",
+		Alt:      0,
+		Lon:      20,
+		Vac:      0,
+		Vel:      0,
+		Lat:      15,
+		Addr:     "",
+		Username: "user",
+		Device:   "device",
 	})
 }

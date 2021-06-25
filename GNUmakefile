@@ -12,7 +12,6 @@ export GOPATH := $(shell go env GOPATH)
 build: dist/owntracks_pg_recorder_linux_amd64
 
 dist/owntracks_pg_recorder_linux_amd64: *.go
-	go mod vendor -v
 	GOOS=linux GOARCH=amd64 go build -ldflags=$(LDFLAGS) -o dist/owntracks_pg_recorder_linux_amd64
 
 test: $(TEST_COVERAGE)

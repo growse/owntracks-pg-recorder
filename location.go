@@ -18,38 +18,90 @@ import (
 /*
 This should be some sort of thing that's sent from the phone
 */
+
 type Location struct {
-	Latitude             float64 `json:"lat" binding:"required"`
-	Longitude            float64 `json:"long" binding:"required"`
-	Timestamp            time.Time
-	DeviceTimestamp      time.Time
-	DeviceTimestampAsInt int64   `json:"time" binding:"required"`
-	Accuracy             float32 `json:"acc" binding:"required"`
-	Distance             float64
-	DeviceID             string `json:"deviceid" binding:"required"`
-	Altitude             float32
-	VerticalAccuracy     float32
-	Speed                float32
-	Geocoding            string
+	Timestamp        int64   `json:"tst" binding:"required"`
+	Accuracy         float32 `json:"acc" binding:"required"`
+	Type             string  `json:"_type" binding:"required"`
+	Latitude         float64 `json:"lat" binding:"required"`
+	Longitude        float64 `json:"lon" binding:"required"`
+	Altitude         float32 `json:"alt" binding:"required"`
+	VerticalAccuracy float32 `json:"vac" binding:"required"`
+	Speed            float32 `json:"vel" binding:"required"`
+	Geocoding        string  `json:"addr" binding:"optional"`
+	Username         string  `json:"username" binding:"optional"`
+	Device           string  `json:"device" binding:"optional"`
 }
 
-func (env *Env) GetLastLocation(user string) (*Location, error) {
+func (env *Env) GetLastLocations() (*[]Location, error) {
+	if env.db == nil {
+		return nil, errors.New("No database connection available.")
+	}
+	defer timeTrack(time.Now())
+	query := "select distinct on (\"user\") \"user\", device," +
+		"geocoding, " +
+		"ST_Y(ST_AsText(point)), " +
+		"ST_X(ST_AsText(point)), " +
+		"devicetimestamp, " +
+		"accuracy, " +
+		"altitude, " +
+		"verticalAccuracy, " +
+		"speed " +
+		"from locations " +
+		"order by \"user\", devicetimestamp desc "
+	rows, err := env.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	var locations []Location
+	for rows.Next() {
+		location := Location{Type: "location"}
+
+		var geocodingMaybe sql.NullString
+		var timestamp time.Time
+		err = rows.Scan(&location.Username, &location.Device, &geocodingMaybe, &location.Latitude, &location.Longitude, &timestamp, &location.Accuracy, &location.Altitude, &location.VerticalAccuracy, &location.Speed)
+		if geocodingMaybe.Valid {
+			location.Geocoding = geocodingMaybe.String
+		}
+		location.Timestamp = timestamp.Unix()
+		if err != nil {
+			log.WithError(err).Error("Unable to pull latest location row out of database")
+		} else {
+			locations = append(locations, location)
+		}
+	}
+	return &locations, nil
+}
+
+func (env *Env) GetLastLocationForUser(user string) (*Location, error) {
 	if env.db == nil {
 		return nil, errors.New("No database connection available")
 	}
-	var location Location
 	defer timeTrack(time.Now())
-	query := "select " +
+	query := "select \"user\", device," +
 		"geocoding, " +
 		"ST_Y(ST_AsText(point)), " +
-		"ST_X(ST_AsText(point)) " +
+		"ST_X(ST_AsText(point)), " +
+		"devicetimestamp, " +
+		"accuracy, " +
+		"altitude, " +
+		"verticalAccuracy, " +
+		"speed " +
 		"from locations " +
-		"where geocoding is not null " +
-		"and \"user\"=$1 " +
-		"order by devicetimestamp desc " +
-		"limit 1"
-	err := env.db.QueryRow(query, user).Scan(&location.Geocoding, &location.Latitude, &location.Longitude)
-	return &location, err
+		"where \"user\"=$1 " +
+		"order by devicetimestamp desc "
+	location := Location{Type: "location"}
+	var geocodingMaybe sql.NullString
+	var timestamp time.Time
+	err := env.db.QueryRow(query, user).Scan(&location.Username, &location.Device, &geocodingMaybe, &location.Latitude, &location.Longitude, &timestamp, &location.Accuracy, &location.Altitude, &location.VerticalAccuracy, &location.Speed)
+	if geocodingMaybe.Valid {
+		location.Geocoding = geocodingMaybe.String
+	}
+	location.Timestamp = timestamp.Unix()
+	if err != nil {
+		return nil, err
+	}
+	return &location, nil
 }
 
 func (env *Env) GetTotalDistanceInMiles() (float64, error) {
@@ -77,9 +129,9 @@ func (env *Env) GetLocationsBetweenDates(from time.Time, to time.Time, user stri
 		"ST_X(ST_AsText(point)), " +
 		"devicetimestamp, " +
 		"coalesce(speed, coalesce(3.6*ST_Distance(point,lag(point,1,point) over (order by devicetimestamp asc))/extract('epoch' from (devicetimestamp-lag(devicetimestamp) over (order by devicetimestamp asc))),0)) as speed, " +
-		"coalesce(altitude, 0), " +
+		"coalesce(altitude, 0) as altitude, " +
 		"accuracy, " +
-		"coalesce(verticalaccuracy, 0) " +
+		"coalesce(verticalaccuracy, 0) as verticalaccuraccy " +
 		"from locations where " +
 		"devicetimestamp>=$1 and devicetimestamp<$2 " +
 		"and \"user\"=$3 and device=$4" +
@@ -88,23 +140,28 @@ func (env *Env) GetLocationsBetweenDates(from time.Time, to time.Time, user stri
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 	var locations []Location
+	var timestamp time.Time
 	for rows.Next() {
-		var location Location
+		location := Location{Type: "location"}
 		err := rows.Scan(
 			&location.Geocoding,
 			&location.Latitude,
 			&location.Longitude,
-			&location.DeviceTimestamp,
+			&timestamp,
 			&location.Speed,
 			&location.Altitude,
 			&location.Accuracy,
 			&location.VerticalAccuracy,
 		)
+		location.Timestamp = timestamp.Unix()
 		if err != nil {
 			return nil, err
 		}
+		location.Username = user
+		location.Device = device
 		locations = append(locations, location)
 	}
 	return &locations, nil
@@ -112,29 +169,37 @@ func (env *Env) GetLocationsBetweenDates(from time.Time, to time.Time, user stri
 }
 
 /* HTTP handlers */
+/* /location */
 func (env *Env) LocationHandler(c *gin.Context) {
-	location, err := env.GetLastLocation("growse")
+	log.WithField("user", env.configuration.DefaultUser).Debug("Getting last location for default user")
+	location, err := env.GetLastLocationForUser(env.configuration.DefaultUser)
+	if err != nil {
+		c.String(500, err.Error())
+		return
+	}
 	distance, err := env.GetTotalDistanceInMiles()
 	if err != nil {
 		c.String(500, err.Error())
 		return
 	}
-	c.Header("Last-modified", location.Timestamp.Format("Mon, 02 Jal 2006 15:04:05 GMT"))
+
+	c.Header("Last-modified", time.Unix(location.Timestamp, 0).Format("Mon, 02 Jal 2006 15:04:05 GMT"))
 	c.JSON(200, gin.H{
-		"name":          location.Name(),
+		"name":          location.GeocodedName(),
 		"latitude":      fmt.Sprintf("%.2f", location.Latitude),
 		"longitude":     fmt.Sprintf("%.2f", location.Longitude),
 		"totalDistance": humanize.FormatFloat("#,###.##", distance),
 	})
+
 }
 
 func (env *Env) LocationHeadHandler(c *gin.Context) {
-	location, err := env.GetLastLocation("growse")
+	location, err := env.GetLastLocationForUser(env.configuration.DefaultUser)
 	if err != nil {
 		c.String(500, err.Error())
 		return
 	}
-	c.Header("Last-modified", location.Timestamp.Format("Mon, 02 Jal 2006 15:04:05 GMT"))
+	c.Header("Last-modified", time.Unix(location.Timestamp, 0).Format("Mon, 02 Jal 2006 15:04:05 GMT"))
 	c.Status(200)
 }
 
@@ -164,50 +229,28 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 	})
 }
 
-type OTPos struct {
-	Tst      int64   `json:"tst" binding:"required"`
-	Acc      float32 `json:"acc" binding:"required"`
-	Type     string  `json:"_type" binding:"required"`
-	Alt      float32 `json:"alt" binding:"required"`
-	Lon      float64 `json:"lon" binding:"required"`
-	Vac      float32 `json:"vac" binding:"required"`
-	Vel      float32 `json:"vel" binding:"required"`
-	Lat      float64 `json:"lat" binding:"required"`
-	Addr     string  `json:"addr" binding:"required"`
-	Username string  `json:"username" binding:"optional"`
-	Device   string  `json:"device" binding:"optional"`
-}
-
-func (location Location) toOT(user string, device string) OTPos {
-	return OTPos{
-		Tst:      location.DeviceTimestamp.Unix(),
-		Acc:      location.Accuracy,
-		Type:     "location",
-		Alt:      location.Altitude,
-		Lat:      location.Latitude,
-		Lon:      location.Longitude,
-		Vel:      location.Speed,
-		Vac:      location.VerticalAccuracy,
-		Addr:     location.Geocoding,
-		Username: user,
-		Device:   device,
-	}
-}
-
 func (env *Env) OTLastPosHandler(c *gin.Context) {
-	location, err := env.GetLastLocation(c.Query("user"))
+	locations, err := env.GetLastLocations()
 	if err != nil {
 		c.String(500, err.Error())
 		return
 	}
-	if location == nil {
+	if locations == nil || len(*locations) == 0 {
 		c.String(500, "No location found")
 		return
 	}
-	last := location.toOT(c.Query("user"), c.Query("device"))
-	c.JSON(200, []OTPos{
-		last,
-	})
+	var filteredLocations []Location
+	user := c.Query("user")
+	device := c.Query("device")
+	for _, location := range *locations {
+		if device == "" || (device != "" && location.Device == device) {
+			if user == "" || (user != "" && location.Username == user) {
+				filteredLocations = append(filteredLocations, location)
+			}
+		}
+
+	}
+	c.JSON(200, filteredLocations)
 }
 
 func (env *Env) OTLocationsHandler(c *gin.Context) {
@@ -238,13 +281,10 @@ func (env *Env) OTLocationsHandler(c *gin.Context) {
 		c.String(500, "No locations found")
 		return
 	}
-	var otpos []OTPos
-	for _, location := range *locations {
-		otpos = append(otpos, location.toOT(user, device))
-	}
+
 	response := struct {
-		Data []OTPos `json:"data"`
-	}{otpos}
+		Data []Location `json:"data"`
+	}{*locations}
 	responseBytes, _ := json.Marshal(response)
 	responseReader := bytes.NewReader(responseBytes)
 	c.DataFromReader(200, int64(len(responseBytes)), "application/json", responseReader, nil)
@@ -275,12 +315,12 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 		}
 		switch string(msg) {
 		case "LAST":
-			location, err := env.GetLastLocation("growse")
+			locations, err := env.GetLastLocations()
 			if err != nil {
-				log.WithError(err).Error("Error fetching last location")
+				log.WithError(err).Error("Error fetching last locations")
 				break
 			}
-			locationAsBytes, err := json.Marshal(location.toOT("growse", "nexus5"))
+			locationAsBytes, err := json.Marshal(*locations)
 			if err != nil {
 				log.WithError(err).Error("Error formatting location for websocket")
 				break

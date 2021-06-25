@@ -22,6 +22,9 @@ type Configuration struct {
 	MQTTClientId           string
 	MQTTTopic              string
 	EnableGeocodingCrawler bool
+	Debug                  bool
+	FilterUsers            string
+	DefaultUser            string
 }
 
 func getConfiguration() *Configuration {
@@ -40,6 +43,7 @@ func getConfiguration() *Configuration {
 	viper.SetDefault("MQTTTopic", "owntracks/#")
 	viper.SetDefault("MQTTClientId", "owntracks-pg-recorder")
 	viper.SetDefault("DatabaseMigrationsPath", "databasemigrations")
+	viper.SetDefault("Debug", false)
 
 	var config Configuration
 

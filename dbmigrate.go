@@ -8,7 +8,7 @@ import (
 )
 
 func (env *Env) DoDatabaseMigrations(migrationsPath string) {
-	log.Printf("Starting Database Migrations from %v", env.configuration.DatabaseMigrationsPath)
+	log.Infof("Starting Database Migrations from %v", env.configuration.DatabaseMigrationsPath)
 	driver, err := postgres.WithInstance(env.db, &postgres.Config{MigrationsTable: "migrations"})
 
 	if err != nil {

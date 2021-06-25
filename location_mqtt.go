@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"github.com/eclipse/paho.mqtt.golang"
-	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
@@ -99,6 +98,15 @@ var reconnectingHandler mqtt.ReconnectHandler = func(client mqtt.Client, options
 	log.Info("MQTT Reconnecting")
 }
 
+func filterUsersContainsUser(filterUsers string, user string) bool {
+	for _, part := range strings.Split(filterUsers, ",") {
+		if part == user {
+			return true
+		}
+	}
+	return false
+}
+
 func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 	log.WithField("mqttTopic", msg.Topic()).Info("Received mqtt message")
 	var locator MQTTMsg
@@ -109,7 +117,7 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	if locator.Type != "location" {
-		log.WithField("msgType", locator.Type).Info("Skipping received message")
+		log.WithField("msgType", locator.Type).WithField("topic", msg.Topic()).Info("Skipping received message")
 		return
 	}
 
@@ -122,16 +130,21 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		locator.Device = topicParts[len(topicParts)-1]
 		locator.User = topicParts[len(topicParts)-2]
 	}
+	if env.configuration.FilterUsers != "" && !filterUsersContainsUser(env.configuration.FilterUsers, locator.User) {
+		log.WithField("user", locator.User).Info("Message from user not in filterUsers list. Skipping")
+		return
+	}
 	env.insertLocationToDatabase(locator)
 }
 
 func (env *Env) insertLocationToDatabase(locator MQTTMsg) {
 	defer timeTrack(time.Now())
 	dozebool := bool(locator.Doze)
-	_, err := env.db.Exec(
+	var lastInsertId int
+	err := env.db.QueryRow(
 		"insert into locations "+
 			"(timestamp,devicetimestamp,accuracy,doze,batterylevel,connectiontype,point, altitude, verticalaccuracy, speed, \"user\", device) "+
-			"values ($1,$2,$3,$4,$5,$6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13)",
+			"values ($1,$2,$3,$4,$5,$6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13) RETURNING id",
 
 		time.Now(),
 		locator.DeviceTimestamp,
@@ -146,19 +159,12 @@ func (env *Env) insertLocationToDatabase(locator MQTTMsg) {
 		locator.Speed,
 		locator.User,
 		locator.Device,
-	)
-	if err == nil {
-		log.Info("Location persisted")
-		GeocodingWorkQueue <- true
-	} else {
-		switch err.(type) {
-		case nil:
+	).Scan(&lastInsertId)
 
-			break
-		case *pq.Error:
-		default:
-			log.WithError(err).WithField("location", locator).Error("Error writing location to database")
-			return
-		}
+	if err == nil {
+		log.WithField("id", lastInsertId).Debug("Inserted database location")
+		GeocodingWorkQueue <- lastInsertId
+	} else {
+		log.WithError(err).Error("Error writing location to database. Not geocoding")
 	}
 }

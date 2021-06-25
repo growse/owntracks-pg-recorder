@@ -37,7 +37,7 @@ type OpencageReverseGeocodeResult struct {
 			Lat float64 `json:"lat"`
 			Lng float64 `json:"lng"`
 		} `json:"southwest"`
-	} `json:"bounds"`
+	} `json:"bounds" binding:"required"`
 	Components struct {
 		ISO31661Alpha2 string `json:"ISO_3166-1_alpha-2"`
 		ISO31661Alpha3 string `json:"ISO_3166-1_alpha-3"`
@@ -56,7 +56,7 @@ type OpencageReverseGeocodeResult struct {
 		State          string `json:"state"`
 		StateCode      string `json:"state_code"`
 		Suburb         string `json:"suburb"`
-	} `json:"components"`
+	} `json:"components" binding:"required"`
 	Confidence int    `json:"confidence"`
 	Formatted  string `json:"formatted"`
 	Geometry   struct {
@@ -65,37 +65,17 @@ type OpencageReverseGeocodeResult struct {
 	} `json:"geometry"`
 }
 type OpencageReverseGeocodeResponse struct {
-	Documentation string `json:"documentation"`
-	Licenses      []struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
-	} `json:"licenses"`
-	Rate struct {
-		Limit     int `json:"limit"`
-		Remaining int `json:"remaining"`
-		Reset     int `json:"reset"`
-	} `json:"rate"`
-	Results []OpencageReverseGeocodeResult `json:"results"`
-	Status  struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"status"`
-	StayInformed struct {
-		Blog    string `json:"blog"`
-		Twitter string `json:"twitter"`
-	} `json:"stay_informed"`
-	Thanks    string `json:"thanks"`
-	Timestamp struct {
-		CreatedHTTP string `json:"created_http"`
-		CreatedUnix int    `json:"created_unix"`
-	} `json:"timestamp"`
-	TotalResults int `json:"total_results"`
+	PlusCode struct {
+		CompoundCode string `json:"compound_code"`
+		GlobalCode   string `json:"global_code"`
+	} `json:"plus_code"`
+	Results []OpencageReverseGeocodeResult `json:"results" binding:"required"`
 }
 
 /*
 Extract a sane name from the geocoding object
 */
-func (location *Location) Name() string {
+func (location *Location) GeocodedName() string {
 	unknownLocation := "Unknown"
 	var geoLocation []OpencageReverseGeocodeResult
 	err := json.Unmarshal([]byte(location.Geocoding), &geoLocation)
@@ -148,14 +128,17 @@ func (location *Location) GetReverseGeocoding(env *Env) (string, error) {
 	geocodingUrl := fmt.Sprintf(env.configuration.ReverseGeocodeApiURL, location.Latitude, location.Longitude)
 
 	geocodingResponse, err := fetchGeocodingResponse(geocodingUrl)
+	log.Debugf("Geocoding Response %+v", geocodingResponse)
 	if err != nil {
 		return "", err
 	}
 	var response OpencageReverseGeocodeResponse
+
 	err = json.Unmarshal([]byte(geocodingResponse), &response)
 	if err != nil {
 		return "", err
 	}
+
 	geocodingJson, err := json.Marshal(response.Results)
 	if err != nil {
 		return "", err
@@ -190,17 +173,17 @@ func fetchGeocodingResponse(geocodingUrl string) (string, error) {
 	return string(body), nil
 }
 
-func (env *Env) UpdateLatestLocationWithGeocoding(workChan <-chan bool) {
+func (env *Env) UpdateLocationWithGeocoding(queue <-chan int) {
 	log.Info("Starting geocoding goroutine")
 	for {
-		_, more := <-workChan
+		id, more := <-queue
 		if more {
-			log.Info("Updating latest geocoding")
-			var location Location
-			var id int
-			err := env.db.QueryRow("select id,ST_Y(ST_AsText(point)),ST_X(ST_AsText(point)) from locations order by devicetimestamp desc limit 1").Scan(&id, &location.Latitude, &location.Longitude)
+			log.WithField("id", more).Info("Updating geocoding for entry")
+			location := Location{Type: "location"}
+
+			err := env.db.QueryRow("select ST_Y(ST_AsText(point)),ST_X(ST_AsText(point)) from locations where id=$1", id).Scan(&location.Latitude, &location.Longitude)
 			if err != nil {
-				log.WithError(err).Error("Error fetching latest location")
+				log.WithError(err).WithField("id", id).Error("Error fetching location from database")
 			}
 			env.geocodeAndUpdateDatabase(location, id)
 		} else {
@@ -232,7 +215,7 @@ func (env *Env) GeocodingCrawler(quitChan <-chan bool) {
 	for {
 		select {
 		case <-ticker.C:
-			var location Location
+			location := Location{Type: "location"}
 			var id int
 			err := env.db.QueryRow("select id,ST_Y(ST_AsText(point)),ST_X(ST_AsText(point)) from locations where geocoding is null and devicetimestamp<CURRENT_DATE - 1 order by devicetimestamp desc limit 1").Scan(&id, &location.Latitude, &location.Longitude)
 			if err != nil {

@@ -9,3 +9,6 @@ port = 3030
 MQTTURL = 'mqtt://localhost:1883'
 MQTTUsername = 'owntracks-pg-recorder'
 MQTTPassword = ""
+Debug = true
+FilterUsers = ""
+DefaultUser = ""

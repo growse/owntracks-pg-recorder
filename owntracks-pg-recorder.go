@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	GeocodingWorkQueue chan bool
+	GeocodingWorkQueue chan int
 )
 
 func InternalError(err error) {
@@ -50,10 +50,17 @@ func main() {
 
 	// Database time
 	env := &Env{db: nil, configuration: getConfiguration()}
+
+	if env.configuration.Debug {
+		log.SetLevel(log.DebugLevel)
+		log.Debug("Setting debug log level")
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
 	if env.configuration.DbHost != "" {
 		env.setupDatabase(env.configuration.DbHost, env.configuration.DbUser, env.configuration.DbName)
-		GeocodingWorkQueue = make(chan bool, 100)
-		go env.UpdateLatestLocationWithGeocoding(GeocodingWorkQueue)
+		GeocodingWorkQueue = make(chan int, 100)
+		go env.UpdateLocationWithGeocoding(GeocodingWorkQueue)
 		if env.configuration.EnableGeocodingCrawler {
 			go env.GeocodingCrawler(quit)
 		}
@@ -65,11 +72,11 @@ func main() {
 	defer env.closeDatabase()
 
 	//Get the router
-	//if env.configuration.Production {
-	gin.SetMode(gin.ReleaseMode)
-	//} else {
-	//	gin.SetMode(gin.DebugMode)
-	//}
+	if env.configuration.Debug {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	router := gin.Default()
 	env.BuildRoutes(router)
 	log.WithField("httpPort", env.configuration.Port).Info("Listening on HTTP")

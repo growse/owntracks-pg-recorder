@@ -6,22 +6,47 @@ import (
 )
 
 func TestGeocodingShouldDecodeLocalityToTheRightName(t *testing.T) {
-	testlocation := "{\"status\": \"OK\", \"results\": [{\"types\": [\"locality\", \"political\"], \"geometry\": {\"bounds\": {\"northeast\": {\"lat\": 51.7829531, \"lng\": -0.4110989}, \"southwest\": {\"lat\": 51.7245271, \"lng\": -0.517344}}, \"location\": {\"lat\": 51.753241, \"lng\": -0.448632}, \"viewport\": {\"northeast\": {\"lat\": 51.7829531, \"lng\": -0.4110989}, \"southwest\": {\"lat\": 51.7245271, \"lng\": -0.517344}}, \"location_type\": \"APPROXIMATE\"}, \"place_id\": \"ChIJwRrXXNBAdkgRsvLfzx9_4PA\", \"formatted_address\": \"Hemel Hempstead, UK\", \"address_components\": [{\"types\": [\"locality\", \"political\"], \"long_name\": \"Hemel Hempstead\", \"short_name\": \"Hemel Hempstead\"}, {\"types\": [\"administrative_area_level_3\", \"political\"], \"long_name\": \"Dacorum District\", \"short_name\": \"Dacorum District\"}, {\"types\": [\"administrative_area_level_2\", \"political\"], \"long_name\": \"Hertfordshire\", \"short_name\": \"Hertfordshire\"}, {\"types\": [\"administrative_area_level_1\", \"political\"], \"long_name\": \"England\", \"short_name\": \"England\"}, {\"types\": [\"country\", \"political\"], \"long_name\": \"United Kingdom\", \"short_name\": \"GB\"}]}]}"
+	testlocation := `
+[
+      {
+         "bounds" : {
+            "northeast" : {
+               "lat" : 51.9528202,
+               "lng" : 7.6325938
+            },
+            "southwest" : {
+               "lat" : 51.9525445,
+               "lng" : 7.6323594
+            }
+         },
+         "components" : {
+            "ISO_3166-1_alpha-2" : "DE",
+            "ISO_3166-1_alpha-3" : "DEU",
+            "_category" : "building",
+            "_type" : "building",
+            "city" : "M\u00fcnster",
+            "city_district" : "M\u00fcnster-Mitte",
+            "continent" : "Europe",
+            "country" : "Germany",
+            "country_code" : "de",
+            "house_number" : "7",
+            "neighbourhood" : "Josef",
+            "political_union" : "European Union",
+            "postcode" : "48153",
+            "road" : "Friedrich-Ebert-Stra\u00dfe",
+            "state" : "North Rhine-Westphalia",
+            "state_code" : "NW",
+            "suburb" : "Innenstadtring"
+         },
+         "confidence" : 10,
+         "formatted" : "Friedrich-Ebert-Str 7, 48153 M\u00fcnster, Germany",
+         "geometry" : {
+            "lat" : 51.9526599,
+            "lng" : 7.632473
+         }
+      }
+   ]`
 	location := Location{Geocoding: testlocation}
-	name := location.Name()
-	assert.Equal(t, "Hemel Hempstead", name)
-}
-
-func TestGeocodingShouldDecodePostalTownToTheRightName(t *testing.T) {
-	testlocation := "{\"status\": \"OK\", \"results\": [{\"types\": [\"locality\", \"political\"], \"geometry\": {\"bounds\": {\"northeast\": {\"lat\": 51.7829531, \"lng\": -0.4110989}, \"southwest\": {\"lat\": 51.7245271, \"lng\": -0.517344}}, \"location\": {\"lat\": 51.753241, \"lng\": -0.448632}, \"viewport\": {\"northeast\": {\"lat\": 51.7829531, \"lng\": -0.4110989}, \"southwest\": {\"lat\": 51.7245271, \"lng\": -0.517344}}, \"location_type\": \"APPROXIMATE\"}, \"place_id\": \"ChIJwRrXXNBAdkgRsvLfzx9_4PA\", \"formatted_address\": \"Hemel Hempstead, UK\", \"address_components\": [{\"types\": [\"locality\", \"political\"], \"long_name\": \"Hemel Hempstead\", \"short_name\": \"Hemel Hempstead\"}, {\"types\": [\"postal_town\"], \"long_name\": \"Hemelty Hempstead\", \"short_name\": \"Hemel Hempstead\"}, {\"types\": [\"administrative_area_level_3\", \"political\"], \"long_name\": \"Dacorum District\", \"short_name\": \"Dacorum District\"}, {\"types\": [\"administrative_area_level_2\", \"political\"], \"long_name\": \"Hertfordshire\", \"short_name\": \"Hertfordshire\"}, {\"types\": [\"administrative_area_level_1\", \"political\"], \"long_name\": \"England\", \"short_name\": \"England\"}, {\"types\": [\"country\", \"political\"], \"long_name\": \"United Kingdom\", \"short_name\": \"GB\"}]}]}"
-	location := Location{Geocoding: testlocation}
-	name := location.Name()
-	assert.Equal(t, "Hemelty Hempstead", name)
-}
-
-func TestGeocodingShouldDecodeAdministrativeAreaToTheRightName(t *testing.T) {
-	testlocation := "{\"status\": \"NOT OK\", \"results\": [{\"types\": [\"locality\", \"political\"], \"geometry\": {\"bounds\": {\"northeast\": {\"lat\": 51.7829531, \"lng\": -0.4110989}, \"southwest\": {\"lat\": 51.7245271, \"lng\": -0.517344}}, \"location\": {\"lat\": 51.753241, \"lng\": -0.448632}, \"viewport\": {\"northeast\": {\"lat\": 51.7829531, \"lng\": -0.4110989}, \"southwest\": {\"lat\": 51.7245271, \"lng\": -0.517344}}, \"location_type\": \"APPROXIMATE\"}, \"place_id\": \"ChIJwRrXXNBAdkgRsvLfzx9_4PA\", \"formatted_address\": \"Hemel Hempstead, UK\", \"address_components\": [{\"types\": [\"locality\", \"political\"], \"long_name\": \"Hemel Hempstead\", \"short_name\": \"Hemel Hempstead\"}, {\"types\": [\"postal_town\"], \"long_name\": \"Hemel Hempstead\", \"short_name\": \"Hemel Hempstead\"}, {\"types\": [\"administrative_area_level_3\", \"political\"], \"long_name\": \"Dacorum District\", \"short_name\": \"Dacorum District\"}, {\"types\": [\"administrative_area_level_2\", \"political\"], \"long_name\": \"Hertfordshire\", \"short_name\": \"Hertfordshire\"}, {\"types\": [\"administrative_area_level_1\", \"political\"], \"long_name\": \"England\", \"short_name\": \"England\"}, {\"types\": [\"country\", \"political\"], \"long_name\": \"United Kingdom\", \"short_name\": \"GB\"}]}]}"
-	location := Location{Geocoding: testlocation}
-	name := location.Name()
-	assert.Equal(t, "Unknown", name)
+	name := location.GeocodedName()
+	assert.Equal(t, "Münster", name)
 }

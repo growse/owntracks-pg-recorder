@@ -13,7 +13,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/paulmach/go.geojson v1.4.0
 	github.com/sirupsen/logrus v1.8.1
-	github.com/spf13/viper v1.8.0
+	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/stretchrcom/testify v1.2.2 // indirect
 )

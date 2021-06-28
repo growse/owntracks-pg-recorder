@@ -8,9 +8,6 @@ import (
 func (env *Env) BuildRoutes(router *gin.Engine) {
 	router.SetHTMLTemplate(BuildTemplates())
 
-	router.GET("", func(c *gin.Context) {
-		c.Redirect(301, "/ui/")
-	})
 	router.GET("place/", func(c *gin.Context) {
 		c.HTML(200, "place", nil)
 	})
@@ -18,7 +15,7 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 
 	otRecorderAPI := router.Group("api")
 	{
-		restAPI := otRecorderAPI.Group("/0")
+		restAPI := otRecorderAPI.Group("0")
 		{
 			restAPI.GET("list", env.OTListUserHandler)
 			restAPI.GET("last", env.OTLastPosHandler)

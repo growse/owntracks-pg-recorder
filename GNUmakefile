@@ -20,6 +20,7 @@ $(TEST_COVERAGE): *.go
 	go test -cover -covermode=count -coverprofile=$@ -v
 
 docker: build
+	chmod +x dist/owntracks_pg_recorder_linux_amd64
 	upx dist/owntracks_pg_recorder_linux_amd64 || true
 	docker build -t ghcr.io/growse/owntracks-pg-recorder:$(VERSION) .
 

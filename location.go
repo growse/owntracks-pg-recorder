@@ -89,7 +89,7 @@ func (env *Env) GetLastLocationForUser(user string) (*Location, error) {
 		"speed " +
 		"from locations " +
 		"where \"user\"=$1 " +
-		"order by devicetimestamp desc "
+		"order by devicetimestamp desc limit 1 "
 	location := Location{Type: "location"}
 	var geocodingMaybe sql.NullString
 	var timestamp time.Time
@@ -230,27 +230,38 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 }
 
 func (env *Env) OTLastPosHandler(c *gin.Context) {
-	locations, err := env.GetLastLocations()
-	if err != nil {
-		c.String(500, err.Error())
-		return
-	}
-	if locations == nil || len(*locations) == 0 {
-		c.String(500, "No location found")
-		return
-	}
-	var filteredLocations []Location
 	user := c.Query("user")
 	device := c.Query("device")
-	for _, location := range *locations {
-		if device == "" || (device != "" && location.Device == device) {
-			if user == "" || (user != "" && location.Username == user) {
-				filteredLocations = append(filteredLocations, location)
-			}
+	if user != "" && device != "" {
+		location, err := env.GetLastLocationForUser(user)
+		if err != nil {
+			c.String(500, err.Error())
+			return
 		}
+		c.JSON(200, [1]*Location{location})
+	} else {
+		locations, err := env.GetLastLocations()
+		if err != nil {
+			c.String(500, err.Error())
+			return
+		}
+		if locations == nil || len(*locations) == 0 {
+			c.String(500, "No location found")
+			return
+		}
+		var filteredLocations []Location
 
+		for _, location := range *locations {
+			if device == "" || (device != "" && location.Device == device) {
+				if user == "" || (user != "" && location.Username == user) {
+					filteredLocations = append(filteredLocations, location)
+				}
+			}
+
+		}
+		c.JSON(200, filteredLocations)
 	}
-	c.JSON(200, filteredLocations)
+
 }
 
 func (env *Env) OTLocationsHandler(c *gin.Context) {

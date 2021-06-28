@@ -61,7 +61,7 @@ const (
 <tr>
 <td>{{$result.Date.Format "2 January 2006"}}</td>
 <td>{{$result.LocationCount}}</td>
-<td><a href="/where/ui/?start={{$result.Date.Format "2006-01-02"}}T00%3A00%3A00&end={{$result.Date.Format "2006-01-02"}}T23%3A59%3A59&layers=last,line,points" title="Map">Map</a></td>
+<td><a href="/?start={{$result.Date.Format "2006-01-02"}}T00%3A00%3A00&end={{$result.Date.Format "2006-01-02"}}T23%3A59%3A59&layers=last,line,points" title="Map">Map</a></td>
 </tr>
 {{ else }}
 <tr><td colspan="3">No results</td></tr>

@@ -13,21 +13,22 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 	})
 	router.POST("place/", env.PlaceHandler)
 
-	otRecorderAPI := router.Group("api")
+	otRecorderAPI := router.Group("api/")
 	{
-		restAPI := otRecorderAPI.Group("0")
+		restAPI := otRecorderAPI.Group("/0")
 		{
 			restAPI.GET("list", env.OTListUserHandler)
 			restAPI.GET("last", env.OTLastPosHandler)
 			restAPI.GET("locations", env.OTLocationsHandler)
 			restAPI.GET("version", OTVersionHandler)
 		}
-		wsAPI := otRecorderAPI.Group("ws")
-		{
-			wsAPI.GET("last", func(c *gin.Context) {
-				env.wshandler(c.Writer, c.Request)
-			})
-		}
+
+	}
+	wsAPI := router.Group("ws")
+	{
+		wsAPI.GET("last", func(c *gin.Context) {
+			env.wshandler(c.Writer, c.Request)
+		})
 	}
 	router.GET("/location/", env.LocationHandler)
 	router.HEAD("/location/", env.LocationHeadHandler)

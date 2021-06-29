@@ -467,7 +467,8 @@ WHERE
     devicetimestamp >= '2018-01-01'
     AND devicetimestamp < '2025-10-02'
 ORDER BY
-    speed DESC;
+    speed DESC
+LIMIT 20;
 
 `
 	rows, err := env.db.Query(query)

@@ -13,6 +13,8 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 	})
 	router.POST("place/", env.PlaceHandler)
 
+	router.GET("inaccurate/", env.GetInaccurateLocationPoints)
+
 	otRecorderAPI := router.Group("api/")
 	{
 		restAPI := otRecorderAPI.Group("/0")

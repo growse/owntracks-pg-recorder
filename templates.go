@@ -72,11 +72,47 @@ const (
 </div>
 {{template "footer"}}
 `
+	inaccurateLocationsTemplate = `{{template "header"}}
+<div class="pure-g">
+<div class="pure-u-1">
+<h1>Inaccurate locations</h1>
+</div>
+</div>
+<div class="pure-g">
+<div class="pure-u-1">
+<table class="pure-table">
+
+<tr>
+<th>Id</th>
+<th>Timestamp</th>
+<th>Speed</th>
+<th>Geocoding</th>
+<th>Link</th>
+</tr>
+
+{{ range $i, $result := .results }}
+<tr>
+<td>{{$result.Id}}</td>
+<td>{{$result.Timestamp.Format "2 January 2006 15:04:05"}}</td>
+<td>{{$result.Speed}}</td>
+<td>{{$result.Geocoding}}</td>
+<td><a href="/?start={{$result.Timestamp.Format "2006-01-02"}}T00%3A00%3A00&end={{$result.Timestamp.Format "2006-01-02"}}T23%3A59%3A59&layers=last,line,points" title="Map">Map</a></td>
+</tr>
+{{ else }}
+<tr><td colspan="3">No results</td></tr>
+{{ end }}
+
+</table>
+</div>
+</div>
+{{template "footer"}}
+`
 )
 
 func BuildTemplates() *template.Template {
 	t := template.Must(template.New("place").Parse(placeTemplate))
 	t = template.Must(t.New("placeResults").Parse(placeResultsTemplate))
 	t = template.Must(t.New("placeResults").Parse(includesTemplate))
+	t = template.Must(t.New("inaccurateLocations").Parse(inaccurateLocationsTemplate))
 	return t
 }

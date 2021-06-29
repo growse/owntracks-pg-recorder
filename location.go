@@ -441,6 +441,72 @@ group by date(devicetimestamp) order by c desc limit 20
 	c.HTML(200, "placeResults", gin.H{"results": results, "place": place, "formatted": feature.Properties["formatted"]})
 }
 
+type InaccurateLocation struct {
+	Id        int64
+	Timestamp time.Time
+	Accuracy  float64
+	LatLng    string
+	Geocoding string
+	Distance  float64
+	Speed     float64
+}
+
+func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
+	query := `
+SELECT
+    id,
+    devicetimestamp,
+    accuracy,
+    concat(st_y (st_astext (point)), ',', st_x (st_astext (point))) as latlng,
+    coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '') as address,
+    st_distance (locations.point, lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
+    coalesce(3.6 * ST_Distance (point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) / extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))), 0) AS speed
+FROM
+    locations
+WHERE
+    devicetimestamp >= '2018-01-01'
+    AND devicetimestamp < '2025-10-02'
+ORDER BY
+    speed DESC;
+
+`
+	rows, err := env.db.Query(query)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	defer rows.Close()
+	var locations []InaccurateLocation
+	for rows.Next() {
+		log.Info("Toot")
+		location := InaccurateLocation{}
+		err := rows.Scan(
+			&location.Id,
+			&location.Timestamp,
+			&location.Accuracy,
+			&location.LatLng,
+			&location.Geocoding,
+			&location.Distance,
+			&location.Speed,
+		)
+		if err != nil {
+			c.Error(err)
+			return
+		}
+		locations = append(locations, location)
+	}
+	if err != nil {
+		c.String(500, err.Error())
+		return
+	}
+	if locations == nil {
+		c.String(404, "No locations found")
+		return
+	}
+	c.HTML(200, "inaccurateLocations", gin.H{"results": locations})
+}
+
 type (
 	LocationCountPerDay struct {
 		LocationCount int

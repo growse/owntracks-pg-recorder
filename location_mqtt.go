@@ -110,7 +110,7 @@ func filterUsersContainsUser(filterUsers string, user string) bool {
 }
 
 func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
-	log.WithField("mqttTopic", msg.Topic()).Info("Received mqtt message")
+
 	var locator MQTTMsg
 	err := json.Unmarshal(msg.Payload(), &locator)
 
@@ -122,6 +122,7 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		log.WithField("msgType", locator.Type).WithField("topic", msg.Topic()).Info("Skipping received message")
 		return
 	}
+	log.WithField("mqttTopic", msg.Topic()).Info("Received location mqtt message")
 
 	locator.DeviceTimestamp = time.Unix(locator.DeviceTimestampAsInt, 0)
 	topicParts := strings.Split(msg.Topic(), "/")

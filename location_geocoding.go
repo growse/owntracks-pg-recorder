@@ -178,7 +178,7 @@ func (env *Env) UpdateLocationWithGeocoding(queue <-chan int) {
 	for {
 		id, more := <-queue
 		if more {
-			log.WithField("id", more).Info("Updating geocoding for entry")
+			log.WithField("id", id).Info("Updating geocoding for entry")
 			location := Location{Type: "location"}
 
 			err := env.db.QueryRow("select ST_Y(ST_AsText(point)),ST_X(ST_AsText(point)) from locations where id=$1", id).Scan(&location.Latitude, &location.Longitude)

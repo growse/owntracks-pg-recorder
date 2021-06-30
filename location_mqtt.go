@@ -43,11 +43,13 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	} else {
 		log.Info("Anon MQTT auth")
 	}
-	mqttClientOptions.SetClientID(env.configuration.MQTTClientId)
 	mqttClientOptions.CleanSession = false
+	mqttClientOptions.ResumeSubs = true
 	mqttClientOptions.SetAutoReconnect(true)
+	mqttClientOptions.ClientID = env.configuration.MQTTClientId
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)
 	mqttClientOptions.SetReconnectingHandler(reconnectingHandler)
+
 	mqttClientOptions.SetOnConnectHandler(func(client mqtt.Client) {
 		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.handler)
 		if err != nil {
@@ -68,11 +70,6 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 
 	select {
 	case <-quit:
-		log.Info("MQTT Unsubscribing")
-		mqttUnsubscribeToken := mqttClient.Unsubscribe(env.configuration.MQTTTopic)
-		if mqttUnsubscribeToken.Wait() && mqttUnsubscribeToken.Error() != nil {
-			log.WithError(mqttUnsubscribeToken.Error()).Error("Error unsubscribing from mqtt")
-		}
 		mqttClient.Disconnect(100)
 		log.Info("Closing MQTT")
 		return nil

@@ -44,6 +44,7 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 		log.Info("Anon MQTT auth")
 	}
 	mqttClientOptions.SetClientID(env.configuration.MQTTClientId)
+	mqttClientOptions.CleanSession = false
 	mqttClientOptions.SetAutoReconnect(true)
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)
 	mqttClientOptions.SetReconnectingHandler(reconnectingHandler)
@@ -80,7 +81,7 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 
 func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageHandler) error {
 	log.WithField("topic", topic).Info("MQTT Subscribing")
-	mqttSubscribeToken := mqttClient.Subscribe(topic, 0, handler)
+	mqttSubscribeToken := mqttClient.Subscribe(topic, 1, handler)
 	if mqttSubscribeToken.Wait() && mqttSubscribeToken.Error() != nil {
 		log.WithError(mqttSubscribeToken.Error()).Error("Error connecting to mqtt")
 		mqttClient.Disconnect(250)

@@ -484,7 +484,6 @@ LIMIT 20;
 	defer rows.Close()
 	var locations []InaccurateLocation
 	for rows.Next() {
-		log.Info("Toot")
 		location := InaccurateLocation{}
 		err := rows.Scan(
 			&location.Id,

@@ -1,6 +1,6 @@
 dbHost = 'localhost'
 dbName = 'locations'
-dbPassword = ""
+dbPassword = "password"
 dbUser = 'owntracks-pg-recorder'
 databaseMigrationsPath = 'databasemigrations/'
 reverseGeocodeApiUrl = ''

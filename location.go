@@ -460,7 +460,11 @@ SELECT
     concat(st_y (st_astext (point)), ',', st_x (st_astext (point))) as latlng,
     coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '') as address,
     st_distance (locations.point, lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
-    coalesce(3.6 * ST_Distance (point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) / extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))), 0) AS speed
+    coalesce(
+       3.6 * ST_Distance (point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) / 
+              (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC)))+1), 
+       0
+    ) AS speed
 FROM
     locations
 WHERE

@@ -80,8 +80,9 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 }
 
 func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageHandler) error {
-	log.WithField("topic", topic).Info("MQTT Subscribing")
-	mqttSubscribeToken := mqttClient.Subscribe(topic, 1, handler)
+	qos := byte(1)
+	log.WithField("topic", topic).WithField("qos", qos).Info("MQTT Subscribing")
+	mqttSubscribeToken := mqttClient.Subscribe(topic, qos, handler)
 	if mqttSubscribeToken.Wait() && mqttSubscribeToken.Error() != nil {
 		log.WithError(mqttSubscribeToken.Error()).Error("Error connecting to mqtt")
 		mqttClient.Disconnect(250)

@@ -8,7 +8,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.14.1
 	github.com/gopherjs/gopherjs v0.0.0-20190910122728-9d188e94fb99 // indirect
 	github.com/gorilla/websocket v1.4.2
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.10.3
 	github.com/martinlindhe/unit v0.0.0-20180817222220-284ab7627fae
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/paulmach/go.geojson v1.4.0

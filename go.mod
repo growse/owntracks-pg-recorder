@@ -5,7 +5,7 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/eclipse/paho.mqtt.golang v1.3.5
 	github.com/gin-gonic/gin v1.7.4
-	github.com/golang-migrate/migrate/v4 v4.14.1
+	github.com/golang-migrate/migrate/v4 v4.15.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/lib/pq v1.10.3
 	github.com/martinlindhe/unit v0.0.0-20180817222220-284ab7627fae

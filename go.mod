@@ -7,7 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.7.4
 	github.com/golang-migrate/migrate/v4 v4.15.1
 	github.com/gorilla/websocket v1.4.2
-	github.com/lib/pq v1.10.3
+	github.com/lib/pq v1.10.4
 	github.com/martinlindhe/unit v0.0.0-20180817222220-284ab7627fae
 	github.com/paulmach/go.geojson v1.4.0
 	github.com/sirupsen/logrus v1.8.1

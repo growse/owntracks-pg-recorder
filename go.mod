@@ -4,7 +4,7 @@ require (
 	github.com/braintree/manners v0.0.0-20150503212558-0b5e6b2c2843
 	github.com/dustin/go-humanize v1.0.0
 	github.com/eclipse/paho.mqtt.golang v1.3.5
-	github.com/gin-gonic/gin v1.7.4
+	github.com/gin-gonic/gin v1.7.6
 	github.com/golang-migrate/migrate/v4 v4.15.1
 	github.com/gorilla/websocket v1.4.2
 	github.com/lib/pq v1.10.4

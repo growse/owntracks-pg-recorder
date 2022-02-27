@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/paulmach/go.geojson"
-	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
+
+	"github.com/patrickmn/go-cache"
+	geojson "github.com/paulmach/go.geojson"
+	log "github.com/sirupsen/logrus"
 )
 
 type GeoLocation struct {
@@ -119,12 +122,36 @@ func (env *Env) GetGeocoding(place string) (*geojson.FeatureCollection, error) {
 	return featureColletion, nil
 }
 
+func RoundCoordinate(input float64) float64 {
+	rounded, err := strconv.ParseFloat(fmt.Sprintf("%.5f", input), 64)
+	if err != nil {
+		log.Fatalf("Unable to truncate float to precision: %v", input)
+	}
+	return rounded
+
+}
+
+var reverseGeocodeCache = cache.New(cache.NoExpiration, 0)
+
 func (location *Location) GetReverseGeocoding(env *Env) (string, error) {
 	if env.configuration.ReverseGeocodeApiURL == "" {
 		err := errors.New("Reverse Geocoding API should not be blank")
 		InternalError(err)
 		return "", err
 	}
+
+	cacheKey := fmt.Sprintf("%v%v", RoundCoordinate(location.Latitude), RoundCoordinate(location.Longitude))
+
+	if value, present := reverseGeocodeCache.Get(cacheKey); present {
+		if stringValue, ok := value.(string); ok {
+			log.Debugf("Found cached reverse geocode for %v", cacheKey)
+			return stringValue, nil
+		} else {
+			log.Warnf("Cache value wasn't a string? %v", value)
+			reverseGeocodeCache.Delete(cacheKey)
+		}
+	}
+
 	geocodingUrl := fmt.Sprintf(env.configuration.ReverseGeocodeApiURL, location.Latitude, location.Longitude)
 
 	geocodingResponse, err := fetchGeocodingResponse(geocodingUrl)
@@ -143,6 +170,7 @@ func (location *Location) GetReverseGeocoding(env *Env) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	reverseGeocodeCache.Set(cacheKey, string(geocodingJson), 0)
 	return string(geocodingJson), nil
 }
 

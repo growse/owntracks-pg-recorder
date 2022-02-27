@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGeocodingShouldDecodeLocalityToTheRightName(t *testing.T) {
@@ -49,4 +50,17 @@ func TestGeocodingShouldDecodeLocalityToTheRightName(t *testing.T) {
 	location := Location{Geocoding: testlocation}
 	name := location.GeocodedName()
 	assert.Equal(t, "Münster", name)
+}
+
+func TestRoundCoordinate(t *testing.T) {
+	inputs := map[float64]float64{
+      1.234567: 1.23457,
+      75.0:75.0,
+      23.123:23.123,
+      784.1234567789:784.12346,
+
+   }
+	for input, expected := range inputs {
+		assert.Equal(t, expected, RoundCoordinate(input))
+	}
 }

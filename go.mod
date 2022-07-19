@@ -11,7 +11,7 @@ require (
 	github.com/martinlindhe/unit v0.0.0-20180817222220-284ab7627fae
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/paulmach/go.geojson v1.4.0
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/viper v1.12.0
 	github.com/stretchr/testify v1.8.0
 	github.com/stretchrcom/testify v1.2.2 // indirect

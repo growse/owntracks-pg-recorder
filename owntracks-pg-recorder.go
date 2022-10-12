@@ -3,14 +3,15 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/braintree/manners"
-	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq"
-	log "github.com/sirupsen/logrus"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/braintree/manners"
+	"github.com/gin-gonic/gin"
+	_ "github.com/lib/pq"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -58,7 +59,7 @@ func main() {
 		log.SetLevel(log.InfoLevel)
 	}
 	if env.configuration.DbHost != "" {
-		env.setupDatabase(env.configuration.DbHost, env.configuration.DbUser, env.configuration.DbName)
+		env.setupDatabase()
 		GeocodingWorkQueue = make(chan int, 100)
 		go env.UpdateLocationWithGeocoding(GeocodingWorkQueue)
 		if env.configuration.EnableGeocodingCrawler {
@@ -98,11 +99,8 @@ func (env *Env) closeDatabase() {
 	}()
 }
 
-func (env *Env) setupDatabase(host string, user string, name string) {
-	connectionString := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable", host, user, name)
-	if env.configuration.DbPassword != "" {
-		connectionString = fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable password=%s", env.configuration.DbHost, env.configuration.DbUser, env.configuration.DbName, env.configuration.DbPassword)
-	}
+func (env *Env) setupDatabase() {
+	connectionString := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=%s password=%s", env.configuration.DbHost, env.configuration.DbUser, env.configuration.DbName, env.configuration.DbSslMode, env.configuration.DbPassword)
 
 	db, err := sql.Open("postgres", connectionString)
 

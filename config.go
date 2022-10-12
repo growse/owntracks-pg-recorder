@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/spf13/viper"
 	"log"
+
+	"github.com/spf13/viper"
 )
 
 type Configuration struct {
@@ -10,6 +11,7 @@ type Configuration struct {
 	DbName                 string
 	DbPassword             string
 	DbHost                 string
+	DbSslMode              string
 	DatabaseMigrationsPath string
 	GeocodeApiURL          string
 	ReverseGeocodeApiURL   string
@@ -43,6 +45,7 @@ func getConfiguration() *Configuration {
 	viper.SetDefault("MQTTTopic", "owntracks/#")
 	viper.SetDefault("MQTTClientId", "owntracks-pg-recorder")
 	viper.SetDefault("DatabaseMigrationsPath", "databasemigrations")
+	viper.SetDefault("DbSslMode", "require")
 	viper.SetDefault("Debug", false)
 
 	var config Configuration

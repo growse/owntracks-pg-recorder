@@ -8,7 +8,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/gorilla/websocket v1.5.0
 	github.com/lib/pq v1.10.7
-	github.com/martinlindhe/unit v0.0.0-20180817222220-284ab7627fae
+	github.com/martinlindhe/unit v0.0.0-20220817221856-f7b595b5f97e
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/paulmach/go.geojson v1.4.0
 	github.com/sirupsen/logrus v1.9.0

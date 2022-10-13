@@ -20,7 +20,7 @@ func (env *Env) DoDatabaseMigrations(migrationsPath string) {
 		log.WithError(err).Fatal("Errors encountered creating migration driver")
 	}
 
-	sourceDriver, err := iofs.New(migrationsFs, "databasemigraions")
+	sourceDriver, err := iofs.New(migrationsFs, "databasemigrations")
 	if err != nil {
 		log.WithError(err).Fatal("Could not create migrations source driver")
 	}

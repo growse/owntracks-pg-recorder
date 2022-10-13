@@ -32,9 +32,10 @@ type Configuration struct {
 func getConfiguration() *Configuration {
 	viper.AutomaticEnv()
 	viper.SetConfigName("owntracks-pg-recorder.toml")
+	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/owntracks-pg-recorder")
 	viper.SetConfigType("toml")
-	viper.SetEnvPrefix("test")
+	viper.SetEnvPrefix("OT_PG_RECORDER")
 	//Config parsing
 
 	if err := viper.ReadInConfig(); err != nil {

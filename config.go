@@ -12,7 +12,6 @@ type Configuration struct {
 	DbPassword             string
 	DbHost                 string
 	DbSslMode              string
-	DatabaseMigrationsPath string
 	GeocodeApiURL          string
 	ReverseGeocodeApiURL   string
 	Domain                 string
@@ -58,7 +57,7 @@ func getConfiguration() *Configuration {
 		ReverseGeocodeApiURL:   "",
 		Domain:                 "",
 		Port:                   1,
-		MaxDBOpenConnections:   1,
+		MaxDBOpenConnections:   10,
 		MQTTURL:                "",
 		MQTTUsername:           "",
 		MQTTPassword:           "",

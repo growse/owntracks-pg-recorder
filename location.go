@@ -38,17 +38,18 @@ func (env *Env) GetLastLocations() (*[]Location, error) {
 		return nil, errors.New("No database connection available.")
 	}
 	defer timeTrack(time.Now())
-	query := "select distinct on (\"user\") \"user\", device," +
-		"geocoding, " +
-		"ST_Y(ST_AsText(point)), " +
-		"ST_X(ST_AsText(point)), " +
-		"devicetimestamp, " +
-		"accuracy, " +
-		"altitude, " +
-		"verticalAccuracy, " +
-		"speed " +
-		"from locations " +
-		"order by \"user\", devicetimestamp desc "
+	query := `select distinct on ("user") "user",
+                            device,
+                            geocoding,
+                            ST_Y(ST_AsText(point)),
+                            ST_X(ST_AsText(point)),
+                            devicetimestamp,
+                            accuracy,
+                            altitude,
+                            verticalAccuracy,
+                            speed
+from locations
+order by "user", devicetimestamp desc`
 	rows, err := env.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -75,21 +76,22 @@ func (env *Env) GetLastLocations() (*[]Location, error) {
 
 func (env *Env) GetLastLocationForUser(user string) (*Location, error) {
 	if env.db == nil {
-		return nil, errors.New("No database connection available")
+		return nil, errors.New("no database connection available")
 	}
 	defer timeTrack(time.Now())
-	query := "select \"user\", device," +
-		"geocoding, " +
-		"ST_Y(ST_AsText(point)), " +
-		"ST_X(ST_AsText(point)), " +
-		"devicetimestamp, " +
-		"accuracy, " +
-		"altitude, " +
-		"verticalAccuracy, " +
-		"speed " +
-		"from locations " +
-		"where \"user\"=$1 " +
-		"order by devicetimestamp desc limit 1 "
+	query := `select "user",
+       device,
+       geocoding,
+       ST_Y(ST_AsText(point)),
+       ST_X(ST_AsText(point)),
+       devicetimestamp,
+       accuracy,
+       altitude,
+       verticalAccuracy,
+       speed
+from locations
+where "user" = $1
+order by devicetimestamp desc limit 1 `
 	location := Location{Type: "location"}
 	var geocodingMaybe sql.NullString
 	var timestamp time.Time
@@ -123,19 +125,23 @@ func (env *Env) GetLocationsBetweenDates(from time.Time, to time.Time, user stri
 		return nil, errors.New("No database connection available")
 	}
 	defer timeTrack(time.Now())
-	query := "select " +
-		"coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', ''), " +
-		"ST_Y(ST_AsText(point)), " +
-		"ST_X(ST_AsText(point)), " +
-		"devicetimestamp, " +
-		"coalesce(speed, coalesce(3.6*ST_Distance(point,lag(point,1,point) over (order by devicetimestamp asc))/extract('epoch' from (devicetimestamp-lag(devicetimestamp) over (order by devicetimestamp asc))),0)) as speed, " +
-		"coalesce(altitude, 0) as altitude, " +
-		"accuracy, " +
-		"coalesce(verticalaccuracy, 0) as verticalaccuraccy " +
-		"from locations where " +
-		"devicetimestamp>=$1 and devicetimestamp<$2 " +
-		"and \"user\"=$3 and device=$4" +
-		"order by devicetimestamp desc"
+	query := `select coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', ''),
+       ST_Y(ST_AsText(point)),
+       ST_X(ST_AsText(point)),
+       devicetimestamp,
+       coalesce(speed, coalesce(3.6 * ST_Distance(point, lag(point, 1, point) over (order by devicetimestamp asc)) /
+                                extract('epoch' from
+                                        (devicetimestamp - lag(devicetimestamp) over (order by devicetimestamp asc))),
+                                0))  as speed,
+       coalesce(altitude, 0)         as altitude,
+       accuracy,
+       coalesce(verticalaccuracy, 0) as verticalaccuraccy
+from locations
+where devicetimestamp >= $1
+  and devicetimestamp < $2
+  and "user" = $3
+  and device = $4
+order by devicetimestamp desc`
 	rows, err := env.db.Query(query, from, to, user, device)
 	if err != nil {
 		return nil, err
@@ -207,12 +213,13 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 	var rows *sql.Rows
 	var err error
 	if c.Query("user") != "" {
-		rows, err = env.db.Query("select distinct \"device\" from locations where \"user\"=$1 order by \"device\";", c.Query("user"))
+		rows, err = env.db.Query(`select distinct "device" from locations where "user"=$1 order by "device";`, c.Query("user"))
 	} else {
-		rows, err = env.db.Query("select distinct \"user\" from locations order by \"user\";")
+		rows, err = env.db.Query(`select distinct "user\" from locations order by "user";`)
 	}
 	if err != nil {
 		c.Error(err)
+		return
 	}
 	defer rows.Close()
 	var results []string

@@ -65,8 +65,9 @@ func main() {
 		if env.configuration.EnableGeocodingCrawler {
 			go env.GeocodingCrawler(quit)
 		}
+		env.DoDatabaseMigrations()
 		go env.SubscribeMQTT(quit)
-		env.DoDatabaseMigrations(env.configuration.DatabaseMigrationsPath)
+
 	} else {
 		log.Fatal("No database host specified, disabling")
 	}

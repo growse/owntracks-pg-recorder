@@ -134,7 +134,9 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		log.WithField("user", locator.User).Info("Message from user not in filterUsers list. Skipping")
 		return
 	}
+	log.Info("Inserting into database")
 	env.insertLocationToDatabase(locator)
+	log.Info("Inserted into database")
 }
 
 func (env *Env) insertLocationToDatabase(locator MQTTMsg) {

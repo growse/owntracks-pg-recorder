@@ -215,7 +215,7 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 	if c.Query("user") != "" {
 		rows, err = env.db.Query(`select distinct "device" from locations where "user"=$1 order by "device";`, c.Query("user"))
 	} else {
-		rows, err = env.db.Query(`select distinct "user\" from locations order by "user";`)
+		rows, err = env.db.Query(`select distinct "user" from locations order by "user";`)
 	}
 	if err != nil {
 		c.Error(err)

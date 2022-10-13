@@ -1,8 +1,8 @@
 package main
 
 import (
-	"log"
-
+	"github.com/fatih/structs"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -30,27 +30,51 @@ type Configuration struct {
 }
 
 func getConfiguration() *Configuration {
-	viper.SetConfigName("owntracks-pg-recorder.toml")
-	viper.AddConfigPath(".")
-	viper.AddConfigPath("/etc/owntracks-pg-recorder")
 	viper.AutomaticEnv()
-	viper.SetEnvPrefix("ot_pg_recorder")
+	viper.SetConfigName("owntracks-pg-recorder.toml")
+	viper.AddConfigPath("/etc/owntracks-pg-recorder")
 	viper.SetConfigType("toml")
+	viper.SetEnvPrefix("test")
 	//Config parsing
-	err := viper.ReadInConfig()
-	if err != nil {
-		log.Fatalf("Unable to open configuration file: %v", err)
+
+	if err := viper.ReadInConfig(); err != nil {
+		switch err.(type) {
+		default:
+			log.WithError(err).Fatal("Error loading config file")
+		case viper.ConfigFileNotFoundError:
+			log.WithError(err).Warn("No config file, using defaults / environment")
+		}
 	}
 
-	viper.SetDefault("MQTTTopic", "owntracks/#")
-	viper.SetDefault("MQTTClientId", "owntracks-pg-recorder")
-	viper.SetDefault("DatabaseMigrationsPath", "databasemigrations")
-	viper.SetDefault("DbSslMode", "require")
-	viper.SetDefault("Debug", false)
+	// Defaults
+	config := Configuration{
+		DbUser:                 "",
+		DbName:                 "",
+		DbPassword:             "",
+		DbHost:                 "",
+		DbSslMode:              "require",
+		GeocodeApiURL:          "",
+		ReverseGeocodeApiURL:   "",
+		Domain:                 "",
+		Port:                   1,
+		MaxDBOpenConnections:   1,
+		MQTTURL:                "",
+		MQTTUsername:           "",
+		MQTTPassword:           "",
+		MQTTClientId:           "owntracks-pg-recorder",
+		MQTTTopic:              "owntracks/#",
+		EnableGeocodingCrawler: false,
+		Debug:                  false,
+		FilterUsers:            "",
+		DefaultUser:            "",
+	}
 
-	var config Configuration
+	// This hack is needed to pull in configs from Env vars
+	for key := range structs.Map(config) {
+		viper.Set(key, viper.Get(key))
+	}
 
-	err = viper.Unmarshal(&config)
+	err := viper.Unmarshal(&config)
 	if err != nil {
 		log.Fatalf("Unable to parse configuration file: %v", err)
 	}

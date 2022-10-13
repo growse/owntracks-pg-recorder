@@ -1,11 +1,16 @@
 package main
 
 import (
+	"embed"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	log "github.com/sirupsen/logrus"
 )
+
+//go:embed databasemigrations/*.sql
+var migrationsFs embed.FS
 
 func (env *Env) DoDatabaseMigrations(migrationsPath string) {
 	log.Infof("Starting Database Migrations from %v", env.configuration.DatabaseMigrationsPath)
@@ -15,7 +20,11 @@ func (env *Env) DoDatabaseMigrations(migrationsPath string) {
 		log.WithError(err).Fatal("Errors encountered creating migration driver")
 	}
 
-	m, err := migrate.NewWithDatabaseInstance("file://"+migrationsPath, env.configuration.DbName, driver)
+	sourceDriver, err := iofs.New(migrationsFs, "databasemigraions")
+	if err != nil {
+		log.WithError(err).Fatal("Could not create migrations source driver")
+	}
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, env.configuration.DbName, driver)
 
 	if err != nil {
 		log.WithError(err).Fatal("Errors encountered creating migrate instance")

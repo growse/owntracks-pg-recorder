@@ -70,4 +70,3 @@ CREATE INDEX idx_locations_point ON public.locations USING gist (point);
 --
 
 CREATE INDEX idx_locations_timestamp ON public.locations USING btree ("timestamp");
-

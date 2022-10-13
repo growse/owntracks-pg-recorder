@@ -369,10 +369,10 @@ func (env *Env) PlaceHandler(c *gin.Context) {
 	if feature.Properties["bounds"] != nil {
 		bounds := feature.Properties["bounds"].(map[string]interface{})
 		rows, err = env.db.Query(`
-select 
+select
 count(*) as c,
-date(devicetimestamp) 
-from locations 
+date(devicetimestamp)
+from locations
 where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1,$2),	ST_Point($3,$4)),4326)
 group by date(devicetimestamp) order by c desc limit 20
 `,
@@ -407,10 +407,10 @@ group by date(devicetimestamp) order by c desc limit 20
 			radius = 25000
 		}
 		rows, err = env.db.Query(`
-select 
+select
 count(*) as c,
-date(devicetimestamp) 
-from locations 
+date(devicetimestamp)
+from locations
 where ST_DWithin(point,ST_SetSRID(ST_Point( $1, $2),4326),$3)
 group by date(devicetimestamp) order by c desc limit 20
 `, feature.Geometry.Point[0], feature.Geometry.Point[1], radius)
@@ -461,8 +461,8 @@ SELECT
     coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '') as address,
     st_distance (locations.point, lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
     coalesce(
-       3.6 * ST_Distance (point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) / 
-              (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC)))+1), 
+       3.6 * ST_Distance (point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
+              (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC)))+1),
        0
     ) AS speed
 FROM

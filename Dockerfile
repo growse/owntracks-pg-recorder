@@ -22,7 +22,8 @@ FROM scratch
 
 COPY --from=builder /app/owntracks-pg-recorder /usr/local/bin/owntracks-pg-recorder
 COPY --from=cert-fetcher /passwd /etc/passwd
-#COPY --from=builder /app/owntracks-pg-recorder.toml /owntracks-pg-recorder.toml
+COPY --from=cert-fetcher /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
 VOLUME /etc/owntracks-pg-recorder
 
 USER ot-pg-recorder

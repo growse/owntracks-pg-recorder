@@ -8,7 +8,7 @@ require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/gorilla/websocket v1.5.0
-	github.com/lib/pq v1.10.7
+	github.com/lib/pq v1.10.8
 	github.com/martinlindhe/unit v0.0.0-20221119104754-49d25a6e149e
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/paulmach/go.geojson v1.4.0

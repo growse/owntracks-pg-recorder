@@ -66,7 +66,12 @@ func main() {
 			go env.GeocodingCrawler(quit)
 		}
 		env.DoDatabaseMigrations()
-		go env.SubscribeMQTT(quit)
+		go func() {
+			err := env.SubscribeMQTT(quit)
+			if err != nil {
+				log.Fatalf("Can't connect to MQTT: %v", err)
+			}
+		}()
 
 	} else {
 		log.Fatal("No database host specified, disabling")

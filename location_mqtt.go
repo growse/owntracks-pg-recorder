@@ -49,6 +49,7 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	mqttClientOptions.ClientID = env.configuration.MQTTClientId
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)
 	mqttClientOptions.SetReconnectingHandler(reconnectingHandler)
+	mqttClientOptions.AutoAckDisabled = true
 
 	mqttClientOptions.SetOnConnectHandler(func(client mqtt.Client) {
 		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.handler)
@@ -135,11 +136,16 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	log.WithField("timestamp", locator.DeviceTimestamp.String()).Info("Inserting into database")
-	env.insertLocationToDatabase(locator)
-	log.Info("Inserted into database")
+	err = env.insertLocationToDatabase(locator)
+	if err != nil {
+		log.WithError(err).Error("Unable to write location to database")
+	} else {
+		msg.Ack()
+		log.Info("Inserted into database")
+	}
 }
 
-func (env *Env) insertLocationToDatabase(locator MQTTMsg) {
+func (env *Env) insertLocationToDatabase(locator MQTTMsg) error {
 	defer timeTrack(time.Now())
 	dozebool := bool(locator.Doze)
 	var lastInsertId int
@@ -167,6 +173,7 @@ func (env *Env) insertLocationToDatabase(locator MQTTMsg) {
 		log.WithField("id", lastInsertId).Debug("Inserted database location")
 		GeocodingWorkQueue <- lastInsertId
 	} else {
-		log.WithError(err).Error("Error writing location to database. Not geocoding")
+		return err
 	}
+	return nil
 }

@@ -140,7 +140,12 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 	err = env.insertLocationToDatabase(locator)
 	if err != nil {
 		if dbErr, ok := err.(*pq.Error); ok {
-			log.WithError(dbErr).WithField("errorCode", dbErr.Code).Error("Unable to write location to database")
+			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
+				log.WithError(dbErr).Warn("Could not insert location: integrity_constraint_violation")
+				msg.Ack()
+			} else {
+				log.WithError(dbErr).WithField("errorCode", dbErr.Code).Error("Unable to write location to database")
+			}
 		} else {
 			log.WithError(err).Error("Unable to write location to database")
 		}

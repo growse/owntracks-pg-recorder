@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"github.com/eclipse/paho.mqtt.golang"
+	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
@@ -138,7 +139,11 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 	log.WithField("timestamp", locator.DeviceTimestamp.String()).Info("Inserting into database")
 	err = env.insertLocationToDatabase(locator)
 	if err != nil {
-		log.WithError(err).Error("Unable to write location to database")
+		if dbErr, ok := err.(*pq.Error); ok {
+			log.WithError(dbErr).WithField("errorCode", dbErr.Code).Error("Unable to write location to database")
+		} else {
+			log.WithError(err).Error("Unable to write location to database")
+		}
 	} else {
 		msg.Ack()
 		log.Info("Inserted into database")

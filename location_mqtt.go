@@ -115,10 +115,12 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 
 	if err != nil {
 		log.WithError(err).WithField("payload", msg.Payload()).Error("Error decoding MQTT message")
+		msg.Ack()
 		return
 	}
 	if locator.Type != "location" {
 		log.WithField("msgType", locator.Type).WithField("topic", msg.Topic()).Info("Skipping received message")
+		msg.Ack()
 		return
 	}
 	log.WithField("mqttTopic", msg.Topic()).Info("Received location mqtt message")
@@ -134,6 +136,7 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 	}
 	if env.configuration.FilterUsers != "" && !filterUsersContainsUser(env.configuration.FilterUsers, locator.User) {
 		log.WithField("user", locator.User).Info("Message from user not in filterUsers list. Skipping")
+		msg.Ack()
 		return
 	}
 	log.WithField("timestamp", locator.DeviceTimestamp.String()).Info("Inserting into database")

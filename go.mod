@@ -3,7 +3,7 @@ module github.com/growse/owntracks-pg-recorder
 require (
 	github.com/braintree/manners v0.0.0-20160418043613-82a8879fc5fd
 	github.com/dustin/go-humanize v1.0.1
-	github.com/eclipse/paho.mqtt.golang v1.4.2
+	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/fatih/structs v1.1.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-migrate/migrate/v4 v4.16.2

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,7 +12,6 @@ import (
 	"github.com/braintree/manners"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -19,7 +19,7 @@ var (
 )
 
 func InternalError(err error) {
-	log.WithError(err).Error("Internal Error")
+	slog.Error("Internal Error", "err", err)
 }
 
 type Env struct {
@@ -36,27 +36,32 @@ func main() {
 
 	go func() {
 		for sig := range c {
-			log.WithField("signal", sig).Info("captured signal. Exiting...")
+			slog.Info("captured signal. Exiting...", "signal", sig)
 			if quit != nil {
 				close(quit)
 			}
 			if GeocodingWorkQueue != nil {
 				close(GeocodingWorkQueue)
 			}
-			log.Info("Closing manners")
+			slog.Info("Closing manners")
 			manners.Close()
 		}
-		log.Info("Quitting signal listener goroutine.")
+		slog.Info("Quitting signal listener goroutine.")
 	}()
 
 	// Database time
-	env := &Env{db: nil, configuration: getConfiguration()}
+	configuration, err := getConfiguration()
+	if err != nil {
+		slog.Error("Unable to parse config", "err", err)
+		os.Exit(1)
+	}
+	env := &Env{db: nil, configuration: configuration}
 
 	if env.configuration.Debug {
-		log.SetLevel(log.DebugLevel)
-		log.Debug("Setting debug log level")
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		slog.Debug("Setting debug logger.level", "config", env.configuration)
 	} else {
-		log.SetLevel(log.InfoLevel)
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
 	if env.configuration.DbHost != "" {
 		env.setupDatabase()
@@ -69,12 +74,13 @@ func main() {
 		go func() {
 			err := env.SubscribeMQTT(quit)
 			if err != nil {
-				log.Fatalf("Can't connect to MQTT: %v", err)
+				slog.Error("Can't connect to MQTT", "err", err)
 			}
 		}()
 
 	} else {
-		log.Fatal("No database host specified, disabling")
+		slog.Error("No database host specified, disabling")
+		os.Exit(1)
 	}
 	defer env.closeDatabase()
 
@@ -86,20 +92,20 @@ func main() {
 	}
 	router := gin.Default()
 	env.BuildRoutes(router)
-	log.WithField("httpPort", env.configuration.Port).Info("Listening on HTTP")
-	err := manners.ListenAndServe(fmt.Sprintf(":%d", env.configuration.Port), router)
+	slog.Info("Listening on HTTP", "httpPort", env.configuration.Port)
+	err = manners.ListenAndServe(fmt.Sprintf(":%d", env.configuration.Port), router)
 	if err != nil {
-		log.WithError(err).Fatal("Error starting server")
+		slog.Error("Error starting server", "err", err)
 	}
 }
 
 func (env *Env) closeDatabase() {
 	func() {
-		log.Info("Closing database")
+		slog.Info("Closing database")
 		if env.db != nil {
 			err := env.db.Close()
 			if err != nil {
-				log.WithError(err).Fatal("Error closing database")
+				slog.Error("Error closing database", "err", err)
 			}
 		}
 	}()
@@ -111,14 +117,14 @@ func (env *Env) setupDatabase() {
 	db, err := sql.Open("postgres", connectionString)
 
 	if err != nil {
-		log.WithError(err).Fatal("Error connecting to database")
+		slog.Error("Error connecting to database", "err", err)
 	}
 
 	err = db.Ping()
 	if err != nil {
-		log.WithError(err).Fatal("Error connecting to database")
+		slog.Error("Error connecting to database", "err", err)
 	} else {
-		log.Info("Database connected")
+		slog.Info("Database connected")
 	}
 
 	db.SetMaxOpenConns(env.configuration.MaxDBOpenConnections)

@@ -1,19 +1,25 @@
 package main
 
 import (
+	"embed"
 	"github.com/gin-gonic/gin"
+	"html/template"
 	_ "time"
 )
 
+//go:embed templates/*
+var embedFs embed.FS
+
 func (env *Env) BuildRoutes(router *gin.Engine) {
-	router.SetHTMLTemplate(BuildTemplates())
+	router.SetHTMLTemplate(template.Must(template.New("").ParseFS(embedFs, "templates/*.gohtml")))
 
 	router.GET("place/", func(c *gin.Context) {
-		c.HTML(200, "place", nil)
+		c.HTML(200, "place.gohtml", nil)
 	})
 	router.POST("place/", env.PlaceHandler)
 
 	router.GET("inaccurate/", env.GetInaccurateLocationPoints)
+	router.DELETE("inaccurate/:id", env.DeleteLocationPoint)
 
 	otRecorderAPI := router.Group("api/")
 	{

@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/martinlindhe/unit"
-	log "github.com/sirupsen/logrus"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -66,7 +66,7 @@ order by "user", devicetimestamp desc`
 		}
 		location.Timestamp = timestamp.Unix()
 		if err != nil {
-			log.WithError(err).Error("Unable to pull latest location row out of database")
+			slog.Error("Unable to pull latest location row out of database", "err", err)
 		} else {
 			locations = append(locations, location)
 		}
@@ -177,7 +177,7 @@ order by devicetimestamp desc`
 /* HTTP handlers */
 /* /location */
 func (env *Env) LocationHandler(c *gin.Context) {
-	log.WithField("user", env.configuration.DefaultUser).Debug("Getting last location for default user")
+	slog.Debug("Getting last location for default user", "user", env.configuration.DefaultUser)
 	location, err := env.GetLastLocationForUser(env.configuration.DefaultUser)
 	if err != nil {
 		c.String(500, err.Error())
@@ -227,7 +227,7 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 		var user string
 		err := rows.Scan(&user)
 		if err != nil {
-			log.WithError(err).Error("Error pulling user from db")
+			slog.Error("Error pulling user from db", "err", err)
 		}
 		results = append(results, user)
 	}
@@ -322,7 +322,7 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 	wsupgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	conn, err := wsupgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.WithError(err).Printf("Failed to set websocket upgrade: %+v\n", err)
+		slog.Error("Failed to set websocket upgrade", "err", err)
 		return
 	}
 
@@ -335,15 +335,18 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 		case "LAST":
 			locations, err := env.GetLastLocations()
 			if err != nil {
-				log.WithError(err).Error("Error fetching last locations")
+				slog.Error("Error fetching last locations", "err", err)
 				break
 			}
 			locationAsBytes, err := json.Marshal(*locations)
 			if err != nil {
-				log.WithError(err).Error("Error formatting location for websocket")
+				slog.Error("Error formatting location for websocket", "err", err)
 				break
 			}
-			conn.WriteMessage(t, locationAsBytes)
+			err = conn.WriteMessage(t, locationAsBytes)
+			if err != nil {
+				slog.Warn("error writing message to ws", "err", err)
+			}
 			break
 		default:
 			break
@@ -367,7 +370,7 @@ func (env *Env) PlaceHandler(c *gin.Context) {
 	}
 
 	if len(geocoding.Features) == 0 {
-		c.HTML(200, "placeResults", gin.H{"results": nil, "place": place})
+		c.HTML(200, "placeResults.gohtml", gin.H{"results": nil, "place": place})
 		c.Abort()
 		return
 	}
@@ -375,13 +378,15 @@ func (env *Env) PlaceHandler(c *gin.Context) {
 	var rows *sql.Rows
 	if feature.Properties["bounds"] != nil {
 		bounds := feature.Properties["bounds"].(map[string]interface{})
-		rows, err = env.db.Query(`
-select
-count(*) as c,
-date(devicetimestamp)
+		rows, err = env.db.Query(`select count(*) as c, date (devicetimestamp)
 from locations
-where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1,$2),	ST_Point($3,$4)),4326)
-group by date(devicetimestamp) order by c desc limit 20
+where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
+    , $2)
+    , ST_Point($3
+    , $4))
+    , 4326)
+group by date (devicetimestamp)
+order by c desc limit 20
 `,
 			bounds["northeast"].(map[string]interface{})["lng"],
 			bounds["northeast"].(map[string]interface{})["lat"],
@@ -413,13 +418,15 @@ group by date(devicetimestamp) order by c desc limit 20
 		default:
 			radius = 25000
 		}
-		rows, err = env.db.Query(`
-select
-count(*) as c,
-date(devicetimestamp)
+		rows, err = env.db.Query(`select count(*) as c, date (devicetimestamp)
 from locations
-where ST_DWithin(point,ST_SetSRID(ST_Point( $1, $2),4326),$3)
-group by date(devicetimestamp) order by c desc limit 20
+where ST_DWithin(point
+    , ST_SetSRID(ST_Point( $1
+    , $2)
+    , 4326)
+    , $3)
+group by date (devicetimestamp)
+order by c desc limit 20
 `, feature.Geometry.Point[0], feature.Geometry.Point[1], radius)
 	} else {
 		c.String(500, "No valid geometries found in geocoding response", geocoding)
@@ -445,7 +452,7 @@ group by date(devicetimestamp) order by c desc limit 20
 		}
 		results = append(results, result)
 	}
-	c.HTML(200, "placeResults", gin.H{"results": results, "place": place, "formatted": feature.Properties["formatted"]})
+	c.HTML(200, "placeResults.gohtml", gin.H{"results": results, "place": place, "formatted": feature.Properties["formatted"]})
 }
 
 type InaccurateLocation struct {
@@ -456,6 +463,23 @@ type InaccurateLocation struct {
 	Geocoding string
 	Distance  float64
 	Speed     float64
+}
+
+func (env *Env) DeleteLocationPoint(c *gin.Context) {
+	id := c.Param("id")
+	slog.Info("Deleting point", "id", id)
+	query := `DELETE
+FROM locations
+where id = $1
+	`
+	_, err := env.db.Exec(query, id)
+	if err != nil {
+		slog.Error("Error deleting point from db", "err", err, "id", id)
+		c.String(http.StatusInternalServerError, "Error deleting point from db %v", err)
+		c.Abort()
+	} else {
+		c.Status(http.StatusOK)
+	}
 }
 
 func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
@@ -487,7 +511,7 @@ WHERE id in (with ids as (SELECT id,
                                      )                                                   AS speed
                           FROM locations
                           ORDER BY speed DESC
-                          LIMIT 20)
+                          LIMIT 2)
 
              select ids.id
              from ids
@@ -533,7 +557,7 @@ ORDER BY id DESC
 		c.String(404, "No locations found")
 		return
 	}
-	c.HTML(200, "inaccurateLocations", gin.H{"results": locations})
+	c.HTML(200, "inaccurateLocations.gohtml", gin.H{"results": locations})
 }
 
 type (

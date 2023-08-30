@@ -84,6 +84,7 @@ const (
 
 <tr>
 <th>Id</th>
+<th>LatLng</th>
 <th>Timestamp</th>
 <th>Speed</th>
 <th>Geocoding</th>
@@ -93,6 +94,7 @@ const (
 {{ range $i, $result := .results }}
 <tr>
 <td>{{$result.Id}}</td>
+<td>{{$result.LatLng}}</td>
 <td>{{$result.Timestamp.Format "2 January 2006 15:04:05"}}</td>
 <td>{{$result.Speed}}</td>
 <td>{{$result.Geocoding}}</td>

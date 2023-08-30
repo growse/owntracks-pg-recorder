@@ -19,6 +19,8 @@ import (
 This should be some sort of thing that's sent from the phone
 */
 
+const NumberOfInaccuratePoints = 20
+
 type Location struct {
 	Timestamp        int64   `json:"tst" binding:"required"`
 	Accuracy         float32 `json:"acc" binding:"required"`
@@ -483,7 +485,7 @@ where id = $1
 }
 
 func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
-	query := `
+	query := fmt.Sprintf(`
 SELECT id,
        devicetimestamp,
        accuracy,
@@ -511,7 +513,7 @@ WHERE id in (with ids as (SELECT id,
                                      )                                                   AS speed
                           FROM locations
                           ORDER BY speed DESC
-                          LIMIT 2)
+                          LIMIT %d)
 
              select ids.id
              from ids
@@ -523,7 +525,7 @@ WHERE id in (with ids as (SELECT id,
              from ids)
 ORDER BY id DESC
 ;
-`
+`, NumberOfInaccuratePoints)
 	rows, err := env.db.Query(query)
 	if err != nil {
 		c.Error(err)

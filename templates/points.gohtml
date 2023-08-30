@@ -1,7 +1,7 @@
 {{template "header"}}
 <div class="pure-g">
     <div class="pure-u-1">
-        <h1>Inaccurate locations</h1>
+        <h1>Points for {{.date}}</h1>
     </div>
 </div>
 <div class="pure-g">
@@ -21,13 +21,12 @@
                 <tr hx-target="closest tr" hx-swap="outerHTML">
                     <td>{{$result.Id}}</td>
                     <td>{{$result.LatLng}}</td>
-                    <td>{{$result.Timestamp.Format "2 January 2006 15:04:05"}}</td>
+                    <td>{{$result.Timestamp.Format "2 January 2006 15:04:05 UTC"}}</td>
                     <td>{{$result.Speed}}</td>
                     <td>{{$result.Geocoding}}</td>
                     <td>
                         <a href="/?start={{$result.Timestamp.Format "2006-01-02"}}T00%3A00%3A00&end={{$result.Timestamp.Format "2006-01-02"}}T23%3A59%3A59&layers=last,line,points"
                            title="Map">Map</a>
-                        <a href="/points/{{$result.Timestamp.Format "2006-01-02"}}">Day's Points</a>
                         <button hx-delete="/points/{{$result.Id}}" hx-confirm="Are you sure you wish to delete this point?">Delete</button>
                     </td>
                 </tr>

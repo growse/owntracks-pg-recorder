@@ -2,8 +2,10 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"html/template"
+	"net/http"
 	_ "time"
 )
 
@@ -11,6 +13,7 @@ import (
 var embedFs embed.FS
 
 func (env *Env) BuildRoutes(router *gin.Engine) {
+	router.Use(ErrorHandler)
 	router.SetHTMLTemplate(template.Must(template.New("").ParseFS(embedFs, "templates/*.gohtml")))
 
 	router.GET("place/", func(c *gin.Context) {
@@ -19,7 +22,8 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 	router.POST("place/", env.PlaceHandler)
 
 	router.GET("inaccurate/", env.GetInaccurateLocationPoints)
-	router.DELETE("inaccurate/:id", env.DeleteLocationPoint)
+	router.DELETE("points/:id", env.DeleteLocationPoint)
+	router.GET("points/:date", env.GetPointsForDate)
 
 	otRecorderAPI := router.Group("api/")
 	{
@@ -40,4 +44,16 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 	}
 	router.GET("/location/", env.LocationHandler)
 	router.HEAD("/location/", env.LocationHeadHandler)
+}
+
+func ErrorHandler(c *gin.Context) {
+	c.Next()
+
+	errors := ""
+	for _, err := range c.Errors {
+		errors += fmt.Sprintf("%v\n", err)
+	}
+	if errors != "" {
+		c.String(http.StatusInternalServerError, "Many errors\n%s", errors)
+	}
 }

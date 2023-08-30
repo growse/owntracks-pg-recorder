@@ -457,7 +457,7 @@ order by c desc limit 20
 	c.HTML(200, "placeResults.gohtml", gin.H{"results": results, "place": place, "formatted": feature.Properties["formatted"]})
 }
 
-type InaccurateLocation struct {
+type LocationWithMetadata struct {
 	Id        int64
 	Timestamp time.Time
 	Accuracy  float64
@@ -484,58 +484,33 @@ where id = $1
 	}
 }
 
-func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
-	query := fmt.Sprintf(`
-SELECT id,
+func (env *Env) GetPointsForDate(c *gin.Context) {
+	date := c.Param("date")
+	query := `SELECT id,
        devicetimestamp,
        accuracy,
        concat(st_y(st_astext(point)), ',', st_x(st_astext(point)))                                     as latlng,
        coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '')                               as address,
        st_distance(locations.point,
                    lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
-       coalesce(
-                       3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
-                       (extract('epoch' FROM
-                                (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) + 1),
-                       0
-           )                                                                                           AS speed
+       coalesce(3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
+                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) +
+                 1),
+                0)                                                                                     AS speed
 FROM locations
-WHERE id in (with ids as (SELECT id,
-                                 lag(id) over (order by locations.devicetimestamp desc)  as prev,
-                                 lead(id) over (order by locations.devicetimestamp desc) as next,
-                                 coalesce(
-                                                 3.6 * ST_Distance(point,
-                                                                   lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
-                                                 (extract('epoch' FROM (devicetimestamp -
-                                                                        lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) +
-                                                  1),
-                                                 0
-                                     )                                                   AS speed
-                          FROM locations
-                          ORDER BY speed DESC
-                          LIMIT %d)
-
-             select ids.id
-             from ids
-             union
-             SELECT ids.next
-             from ids
-             union
-             select ids.prev
-             from ids)
-ORDER BY id DESC
-;
-`, NumberOfInaccuratePoints)
-	rows, err := env.db.Query(query)
+where devicetimestamp::date = $1
+ORDER BY devicetimestamp `
+	rows, err := env.db.Query(query, date)
 	if err != nil {
+		slog.Error("Error querying points from db", "err", err)
 		c.Error(err)
 		return
 	}
 
 	defer rows.Close()
-	var locations []InaccurateLocation
+	var locations []LocationWithMetadata
 	for rows.Next() {
-		location := InaccurateLocation{}
+		location := LocationWithMetadata{}
 		err := rows.Scan(
 			&location.Id,
 			&location.Timestamp,
@@ -553,6 +528,54 @@ ORDER BY id DESC
 	}
 	if err != nil {
 		c.String(500, err.Error())
+		return
+	}
+	c.HTML(200, "points.gohtml", gin.H{"date": date, "results": locations})
+}
+
+func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
+	query := fmt.Sprintf(`SELECT id,
+       devicetimestamp,
+       accuracy,
+       concat(st_y(st_astext(point)), ',', st_x(st_astext(point)))                                     as latlng,
+       coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '')                               as address,
+       st_distance(locations.point,
+                   lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
+       coalesce(3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
+                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) +
+                 1),
+                0)                                                                                     AS speed
+FROM locations
+ORDER BY speed DESC
+LIMIT %d
+`, NumberOfInaccuratePoints)
+	rows, err := env.db.Query(query)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	defer rows.Close()
+	var locations []LocationWithMetadata
+	for rows.Next() {
+		location := LocationWithMetadata{}
+		err := rows.Scan(
+			&location.Id,
+			&location.Timestamp,
+			&location.Accuracy,
+			&location.LatLng,
+			&location.Geocoding,
+			&location.Distance,
+			&location.Speed,
+		)
+		if err != nil {
+			c.Error(err)
+			return
+		}
+		locations = append(locations, location)
+	}
+	if err != nil {
+		c.Error(err)
 		return
 	}
 	if locations == nil {

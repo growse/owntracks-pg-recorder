@@ -25,6 +25,9 @@ func (env *Env) BuildRoutes(router *gin.Engine) {
 	router.DELETE("points/:id", env.DeleteLocationPoint)
 	router.GET("points/:date", env.GetPointsForDate)
 
+	router.GET("export/:limit", env.Export)
+	router.GET("export/", env.Export)
+
 	otRecorderAPI := router.Group("api/")
 	{
 		restAPI := otRecorderAPI.Group("/0")

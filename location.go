@@ -12,6 +12,7 @@ import (
 	"github.com/martinlindhe/unit"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -154,16 +155,7 @@ order by devicetimestamp desc`
 	var timestamp time.Time
 	for rows.Next() {
 		location := Location{Type: "location"}
-		err := rows.Scan(
-			&location.Geocoding,
-			&location.Latitude,
-			&location.Longitude,
-			&timestamp,
-			&location.Speed,
-			&location.Altitude,
-			&location.Accuracy,
-			&location.VerticalAccuracy,
-		)
+		err := rows.Scan(&location.Geocoding, &location.Latitude, &location.Longitude, &timestamp, &location.Speed, &location.Altitude, &location.Accuracy, &location.VerticalAccuracy)
 		location.Timestamp = timestamp.Unix()
 		if err != nil {
 			return nil, err
@@ -389,11 +381,7 @@ where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
     , 4326)
 group by date (devicetimestamp)
 order by c desc limit 20
-`,
-			bounds["northeast"].(map[string]interface{})["lng"],
-			bounds["northeast"].(map[string]interface{})["lat"],
-			bounds["southwest"].(map[string]interface{})["lng"],
-			bounds["southwest"].(map[string]interface{})["lat"])
+`, bounds["northeast"].(map[string]interface{})["lng"], bounds["northeast"].(map[string]interface{})["lat"], bounds["southwest"].(map[string]interface{})["lng"], bounds["southwest"].(map[string]interface{})["lat"])
 	} else if feature.Geometry.IsPoint() && feature.Properties["confidence"] != nil && feature.Properties["confidence"].(float64) >= 1 && feature.Properties["confidence"].(float64) <= 10 {
 		var radius int
 		switch confidence := feature.Properties["confidence"].(float64); confidence {
@@ -511,15 +499,7 @@ ORDER BY devicetimestamp `
 	var locations []LocationWithMetadata
 	for rows.Next() {
 		location := LocationWithMetadata{}
-		err := rows.Scan(
-			&location.Id,
-			&location.Timestamp,
-			&location.Accuracy,
-			&location.LatLng,
-			&location.Geocoding,
-			&location.Distance,
-			&location.Speed,
-		)
+		err := rows.Scan(&location.Id, &location.Timestamp, &location.Accuracy, &location.LatLng, &location.Geocoding, &location.Distance, &location.Speed)
 		if err != nil {
 			c.Error(err)
 			return
@@ -559,15 +539,7 @@ LIMIT %d
 	var locations []LocationWithMetadata
 	for rows.Next() {
 		location := LocationWithMetadata{}
-		err := rows.Scan(
-			&location.Id,
-			&location.Timestamp,
-			&location.Accuracy,
-			&location.LatLng,
-			&location.Geocoding,
-			&location.Distance,
-			&location.Speed,
-		)
+		err := rows.Scan(&location.Id, &location.Timestamp, &location.Accuracy, &location.LatLng, &location.Geocoding, &location.Distance, &location.Speed)
 		if err != nil {
 			c.Error(err)
 			return
@@ -591,3 +563,65 @@ type (
 		Date          time.Time
 	}
 )
+
+type DeviceRecord struct {
+	DeviceTimestamp  *time.Time `json:"device_timestamp" binding:"required"`
+	Timestamp        *time.Time `json:"timestamp" binding:"required"`
+	Accuracy         float32    `json:"accuracy" binding:"required"`
+	Geocoding        string     `json:"geocoding" binding:"optional"`
+	BatteryLevel     float32    `json:"battery_level" binding:"required"`
+	ConnectionType   string     `json:"connection_type" binding:"required"`
+	Doze             bool       `json:"doze" binding:"required"`
+	Latitude         float64    `json:"latitude" binding:"required"`
+	Longitude        float64    `json:"longitude" binding:"required"`
+	Speed            float32    `json:"speed" binding:"required"`
+	Altitude         float32    `json:"altitude" binding:"required"`
+	VerticalAccuracy float32    `json:"vertical_accuracy" binding:"required"`
+	User             string     `json:"user" binding:"required"`
+	Device           string     `json:"device" binding:"required"`
+}
+
+func (env *Env) Export(c *gin.Context) {
+	limit, err := strconv.Atoi(c.Param("limit"))
+	query := `SELECT devicetimestamp, timestamp, accuracy, geocoding, batterylevel, connectiontype, doze, st_y(st_astext(point)) AS latitude, st_x(st_astext(point)) AS longitude, speed, altitude, verticalaccuracy, "user", device
+
+FROM locations
+ORDER by devicetimestamp DESC`
+	if err == nil && limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := env.db.Query(query)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	defer rows.Close()
+	writer := c.Writer
+	header := writer.Header()
+	header.Set("Content-Type", "application/json")
+	header.Set("Content-Disposition", "attachment; filename=owntracks-recorder-backup.json")
+
+	writer.WriteHeader(http.StatusOK)
+	writer.(http.Flusher).Flush()
+	writer.WriteString("[")
+	for rows.Next() {
+		var deviceRecord DeviceRecord
+		err := rows.Scan(&deviceRecord.DeviceTimestamp, &deviceRecord.Timestamp, &deviceRecord.Accuracy, &deviceRecord.Geocoding, &deviceRecord.BatteryLevel, &deviceRecord.ConnectionType, &deviceRecord.Doze, &deviceRecord.Latitude, &deviceRecord.Longitude, &deviceRecord.Speed, &deviceRecord.Altitude, &deviceRecord.VerticalAccuracy, &deviceRecord.User, &deviceRecord.Device)
+		if err != nil {
+			slog.Error("Error scanning row", "err", err)
+		} else {
+			deviceRecordJson, err := json.Marshal(deviceRecord)
+			if err != nil {
+				slog.Error("Error marshalling device record", "err", err)
+			} else {
+				writer.Write(deviceRecordJson)
+				writer.WriteString(",")
+			}
+		}
+	}
+	writer.WriteString("]")
+	writer.(http.Flusher).Flush()
+
+}

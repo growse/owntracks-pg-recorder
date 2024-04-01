@@ -604,7 +604,7 @@ ORDER by devicetimestamp DESC`
 	header.Set("Content-Type", "application/json")
 	header.Set("Content-Disposition", "attachment; filename=owntracks-recorder-backup.json")
 	header.Set("Transfer-Encoding", "chunked")
-	header.Set("Content-Transfer-Encoding", "gzip")
+	header.Set("Content-Encoding", "gzip")
 	writer.WriteHeader(http.StatusOK)
 	writer.(http.Flusher).Flush()
 	gzipWriter := gzip.NewWriter(writer)

@@ -569,15 +569,15 @@ type DeviceRecord struct {
 	DeviceTimestamp  *time.Time `json:"device_timestamp" binding:"required"`
 	Timestamp        *time.Time `json:"timestamp" binding:"required"`
 	Accuracy         float32    `json:"accuracy" binding:"required"`
-	Geocoding        string     `json:"geocoding" binding:"optional"`
-	BatteryLevel     int        `json:"battery_level" binding:"required"`
-	ConnectionType   string     `json:"connection_type" binding:"required"`
-	Doze             bool       `json:"doze" binding:"required"`
+	Geocoding        *string    `json:"geocoding" binding:"optional"`
+	BatteryLevel     *int       `json:"battery_level" binding:"required"`
+	ConnectionType   *string    `json:"connection_type" binding:"required"`
+	Doze             *bool      `json:"doze" binding:"required"`
 	Latitude         float64    `json:"latitude" binding:"required"`
 	Longitude        float64    `json:"longitude" binding:"required"`
-	Speed            float32    `json:"speed" binding:"required"`
-	Altitude         float32    `json:"altitude" binding:"required"`
-	VerticalAccuracy float32    `json:"vertical_accuracy" binding:"required"`
+	Speed            *float32   `json:"speed" binding:"required"`
+	Altitude         *float32   `json:"altitude" binding:"required"`
+	VerticalAccuracy *float32   `json:"vertical_accuracy" binding:"required"`
 	User             string     `json:"user" binding:"required"`
 	Device           string     `json:"device" binding:"required"`
 }
@@ -614,16 +614,10 @@ ORDER by devicetimestamp ASC`
 	for rows.Next() {
 		counter += 1
 		var deviceRecord DeviceRecord
-		var geocoding sql.NullString
-		err := rows.Scan(&deviceRecord.DeviceTimestamp, &deviceRecord.Timestamp, &deviceRecord.Accuracy, &geocoding, &deviceRecord.BatteryLevel, &deviceRecord.ConnectionType, &deviceRecord.Doze, &deviceRecord.Latitude, &deviceRecord.Longitude, &deviceRecord.Speed, &deviceRecord.Altitude, &deviceRecord.VerticalAccuracy, &deviceRecord.User, &deviceRecord.Device)
+		err := rows.Scan(&deviceRecord.DeviceTimestamp, &deviceRecord.Timestamp, &deviceRecord.Accuracy, &deviceRecord.Geocoding, &deviceRecord.BatteryLevel, &deviceRecord.ConnectionType, &deviceRecord.Doze, &deviceRecord.Latitude, &deviceRecord.Longitude, &deviceRecord.Speed, &deviceRecord.Altitude, &deviceRecord.VerticalAccuracy, &deviceRecord.User, &deviceRecord.Device)
 		if err != nil {
 			slog.Error("Error scanning row", "err", err)
 		} else {
-			if geocoding.Valid {
-				deviceRecord.Geocoding = geocoding.String
-			} else {
-				deviceRecord.Geocoding = ""
-			}
 			deviceRecordJson, err := json.Marshal(deviceRecord)
 			if err != nil {
 				slog.Error("Error marshalling device record", "err", err)

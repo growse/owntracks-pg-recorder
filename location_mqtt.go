@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/eclipse/paho.mqtt.golang"
 	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
@@ -57,7 +58,6 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 		if err != nil {
 			log.WithField("topic", env.configuration.MQTTTopic).WithError(err).Error("Unable to subscribe to MQTT topic")
 		}
-		log.WithField("topic", env.configuration.MQTTTopic).Info("MQTT subscribed")
 	})
 	mqttClient := mqtt.NewClient(mqttClientOptions)
 
@@ -109,7 +109,10 @@ func filterUsersContainsUser(filterUsers string, user string) bool {
 }
 
 func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
-
+	log.WithField("topic", msg.Topic()).
+		WithField("qos", msg.Qos()).
+		WithField("retained", msg.Retained()).
+		Info("Received mqtt message")
 	var locator MQTTMsg
 	err := json.Unmarshal(msg.Payload(), &locator)
 
@@ -123,7 +126,6 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		msg.Ack()
 		return
 	}
-	log.WithField("mqttTopic", msg.Topic()).Info("Received location mqtt message")
 
 	locator.DeviceTimestamp = time.Unix(locator.DeviceTimestampAsInt, 0)
 	topicParts := strings.Split(msg.Topic(), "/")
@@ -142,15 +144,14 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 	log.WithField("timestamp", locator.DeviceTimestamp.String()).Info("Inserting into database")
 	err = env.insertLocationToDatabase(locator)
 	if err != nil {
-		if dbErr, ok := err.(*pq.Error); ok {
+		var dbErr *pq.Error
+		if errors.As(err, &dbErr) {
 			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
 				log.WithError(dbErr).Warn("Could not insert location: integrity_constraint_violation")
 				msg.Ack()
 			} else {
 				log.WithError(dbErr).WithField("errorCode", dbErr.Code).Error("Unable to write location to database")
 			}
-		} else {
-			log.WithError(err).Error("Unable to write location to database")
 		}
 	} else {
 		msg.Ack()

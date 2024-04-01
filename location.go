@@ -570,7 +570,7 @@ type DeviceRecord struct {
 	Timestamp        *time.Time `json:"timestamp" binding:"required"`
 	Accuracy         float32    `json:"accuracy" binding:"required"`
 	Geocoding        string     `json:"geocoding" binding:"optional"`
-	BatteryLevel     float32    `json:"battery_level" binding:"required"`
+	BatteryLevel     int        `json:"battery_level" binding:"required"`
 	ConnectionType   string     `json:"connection_type" binding:"required"`
 	Doze             bool       `json:"doze" binding:"required"`
 	Latitude         float64    `json:"latitude" binding:"required"`
@@ -587,7 +587,7 @@ func (env *Env) Export(c *gin.Context) {
 	query := `SELECT devicetimestamp, timestamp, accuracy, geocoding, batterylevel, connectiontype, doze, st_y(st_astext(point)) AS latitude, st_x(st_astext(point)) AS longitude, speed, altitude, verticalaccuracy, "user", device
 
 FROM locations
-ORDER by devicetimestamp DESC`
+ORDER by devicetimestamp ASC`
 	if err == nil && limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}

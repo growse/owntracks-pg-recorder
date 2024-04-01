@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -602,11 +603,16 @@ ORDER by devicetimestamp DESC`
 	header := writer.Header()
 	header.Set("Content-Type", "application/json")
 	header.Set("Content-Disposition", "attachment; filename=owntracks-recorder-backup.json")
-
+	header.Set("Transfer-Encoding", "chunked")
+	header.Set("Content-Transfer-Encoding", "gzip")
 	writer.WriteHeader(http.StatusOK)
 	writer.(http.Flusher).Flush()
-	writer.WriteString("[")
+	gzipWriter := gzip.NewWriter(writer)
+	_, _ = gzipWriter.Write([]byte("["))
+	var first = true
+	var counter = 0
 	for rows.Next() {
+		counter += 1
 		var deviceRecord DeviceRecord
 		err := rows.Scan(&deviceRecord.DeviceTimestamp, &deviceRecord.Timestamp, &deviceRecord.Accuracy, &deviceRecord.Geocoding, &deviceRecord.BatteryLevel, &deviceRecord.ConnectionType, &deviceRecord.Doze, &deviceRecord.Latitude, &deviceRecord.Longitude, &deviceRecord.Speed, &deviceRecord.Altitude, &deviceRecord.VerticalAccuracy, &deviceRecord.User, &deviceRecord.Device)
 		if err != nil {
@@ -616,12 +622,20 @@ ORDER by devicetimestamp DESC`
 			if err != nil {
 				slog.Error("Error marshalling device record", "err", err)
 			} else {
-				writer.Write(deviceRecordJson)
-				writer.WriteString(",")
+				if !first {
+					_, _ = gzipWriter.Write([]byte(","))
+				} else {
+					first = false
+				}
+				_, _ = gzipWriter.Write(deviceRecordJson)
 			}
 		}
+		if counter%100 == 0 {
+			_ = gzipWriter.Flush()
+			writer.(http.Flusher).Flush()
+		}
 	}
-	writer.WriteString("]")
+	_, _ = gzipWriter.Write([]byte("]"))
+	_ = gzipWriter.Close()
 	writer.(http.Flusher).Flush()
-
 }

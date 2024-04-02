@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/eclipse/paho.mqtt.golang"
 	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
@@ -110,7 +112,7 @@ func filterUsersContainsUser(filterUsers string, user string) bool {
 	return false
 }
 
-func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
+func (env *Env) handler(_ mqtt.Client, msg mqtt.Message) {
 	log.WithField("topic", msg.Topic()).
 		WithField("qos", msg.Qos()).
 		WithField("retained", msg.Retained()).
@@ -144,34 +146,22 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	log.WithField("timestamp", locationMessage.DeviceTimestamp.String()).WithField("messageId", locationMessage.MessageId).Info("Inserting into database")
-	err = env.insertLocationToDatabase(locationMessage)
-	if err != nil {
-		var dbErr *pq.Error
-		if errors.As(err, &dbErr) {
-			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
-				log.WithError(dbErr).Warn("Could not insert location: integrity_constraint_violation")
-				msg.Ack()
-			} else {
-				log.WithError(dbErr).
-					WithField("errorCode", dbErr.Code).
-					WithField("errorName", dbErr.Code.Name()).
-					Error("Unable to write location to database")
-			}
-		}
-	} else {
-		msg.Ack()
-		log.Info("Inserted into database")
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = 1 * time.Minute
+	insertFunc := func() error {
+		return insertToDatabase(locationMessage, msg, env.db)
 	}
+	err = backoff.Retry(insertFunc, b)
 }
 
-func (env *Env) insertLocationToDatabase(locator MQTTMsg) error {
+func insertToDatabase(locator MQTTMsg, msg mqtt.Message, db *sql.DB) error {
 	ctx := context.Background()
 	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
 	defer timeTrack(time.Now())
 	defer cancelFn()
 	dozebool := bool(locator.Doze)
 	var lastInsertId int
-	err := env.db.QueryRowContext(ctx, `insert into locations
+	err := db.QueryRowContext(ctx, `insert into locations
 (timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
  "user", device)
 values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13)
@@ -179,14 +169,30 @@ RETURNING id`,
 
 		time.Now(), locator.DeviceTimestamp, locator.Accuracy, dozebool, locator.Battery, locator.Connection, locator.Longitude, locator.Latitude, locator.Altitude, locator.VerticalAccuracy, locator.Speed, locator.User, locator.Device).Scan(&lastInsertId)
 
-	if ctx.Err() != nil {
+	if ctx.Err() != nil { // We may have timed out
+		log.WithError(ctx.Err()).Error("Context error")
 		return ctx.Err()
 	}
-	if err == nil {
+	if err != nil { // Database error
+		var dbErr *pq.Error
+		if errors.As(err, &dbErr) {
+			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
+				// We're skipping this point
+				log.WithError(dbErr).Warn("Could not insert location: integrity_constraint_violation")
+				msg.Ack()
+				return nil
+			} else {
+				log.WithError(dbErr).
+					WithField("errorCode", dbErr.Code).
+					WithField("errorName", dbErr.Code.Name()).
+					Error("Unable to write location to database")
+				return err
+			}
+		}
+	} else {
+		msg.Ack()
 		log.WithField("id", lastInsertId).WithField("messageId", locator.MessageId).Debug("Inserted database location")
 		GeocodingWorkQueue <- lastInsertId
-	} else {
-		return err
 	}
 	return nil
 }

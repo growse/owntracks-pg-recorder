@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/eclipse/paho.mqtt.golang"
@@ -160,10 +161,13 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 }
 
 func (env *Env) insertLocationToDatabase(locator MQTTMsg) error {
+	ctx := context.Background()
+	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
 	defer timeTrack(time.Now())
+	defer cancelFn()
 	dozebool := bool(locator.Doze)
 	var lastInsertId int
-	err := env.db.QueryRow(
+	err := env.db.QueryRowContext(ctx,
 		"insert into locations "+
 			"(timestamp,devicetimestamp,accuracy,doze,batterylevel,connectiontype,point, altitude, verticalaccuracy, speed, \"user\", device) "+
 			"values ($1,$2,$3,$4,$5,$6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13) RETURNING id",

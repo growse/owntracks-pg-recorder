@@ -12,6 +12,7 @@ import (
 )
 
 type MQTTMsg struct {
+	MessageId            *string            `json:"_id"`
 	Type                 string             `json:"_type" binding:"required"`
 	TrackerId            string             `json:"tid"`
 	Accuracy             float32            `json:"acc"`
@@ -114,36 +115,36 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 		WithField("qos", msg.Qos()).
 		WithField("retained", msg.Retained()).
 		Info("Received mqtt message")
-	var locator MQTTMsg
-	err := json.Unmarshal(msg.Payload(), &locator)
+	var locationMessage MQTTMsg
+	err := json.Unmarshal(msg.Payload(), &locationMessage)
 
 	if err != nil {
 		log.WithError(err).WithField("payload", msg.Payload()).Error("Error decoding MQTT message")
 		msg.Ack()
 		return
 	}
-	if locator.Type != "location" {
-		log.WithField("msgType", locator.Type).WithField("topic", msg.Topic()).Info("Skipping received message")
+	if locationMessage.Type != "location" {
+		log.WithField("msgType", locationMessage.Type).WithField("topic", msg.Topic()).Info("Skipping received message")
 		msg.Ack()
 		return
 	}
 
-	locator.DeviceTimestamp = time.Unix(locator.DeviceTimestampAsInt, 0)
+	locationMessage.DeviceTimestamp = time.Unix(locationMessage.DeviceTimestampAsInt, 0)
 	topicParts := strings.Split(msg.Topic(), "/")
 
 	if len(topicParts) == 2 {
-		locator.User = topicParts[1]
+		locationMessage.User = topicParts[1]
 	} else if len(topicParts) > 2 {
-		locator.Device = topicParts[len(topicParts)-1]
-		locator.User = topicParts[len(topicParts)-2]
+		locationMessage.Device = topicParts[len(topicParts)-1]
+		locationMessage.User = topicParts[len(topicParts)-2]
 	}
-	if env.configuration.FilterUsers != "" && !filterUsersContainsUser(env.configuration.FilterUsers, locator.User) {
-		log.WithField("user", locator.User).Info("Message from user not in filterUsers list. Skipping")
+	if env.configuration.FilterUsers != "" && !filterUsersContainsUser(env.configuration.FilterUsers, locationMessage.User) {
+		log.WithField("user", locationMessage.User).Info("Message from user not in filterUsers list. Skipping")
 		msg.Ack()
 		return
 	}
-	log.WithField("timestamp", locator.DeviceTimestamp.String()).Info("Inserting into database")
-	err = env.insertLocationToDatabase(locator)
+	log.WithField("timestamp", locationMessage.DeviceTimestamp.String()).WithField("messageId", locationMessage.MessageId).Info("Inserting into database")
+	err = env.insertLocationToDatabase(locationMessage)
 	if err != nil {
 		var dbErr *pq.Error
 		if errors.As(err, &dbErr) {
@@ -151,7 +152,10 @@ func (env *Env) handler(client mqtt.Client, msg mqtt.Message) {
 				log.WithError(dbErr).Warn("Could not insert location: integrity_constraint_violation")
 				msg.Ack()
 			} else {
-				log.WithError(dbErr).WithField("errorCode", dbErr.Code).Error("Unable to write location to database")
+				log.WithError(dbErr).
+					WithField("errorCode", dbErr.Code).
+					WithField("errorName", dbErr.Code.Name()).
+					Error("Unable to write location to database")
 			}
 		}
 	} else {
@@ -167,28 +171,19 @@ func (env *Env) insertLocationToDatabase(locator MQTTMsg) error {
 	defer cancelFn()
 	dozebool := bool(locator.Doze)
 	var lastInsertId int
-	err := env.db.QueryRowContext(ctx,
-		"insert into locations "+
-			"(timestamp,devicetimestamp,accuracy,doze,batterylevel,connectiontype,point, altitude, verticalaccuracy, speed, \"user\", device) "+
-			"values ($1,$2,$3,$4,$5,$6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13) RETURNING id",
+	err := env.db.QueryRowContext(ctx, `insert into locations
+(timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
+ "user", device)
+values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13)
+RETURNING id`,
 
-		time.Now(),
-		locator.DeviceTimestamp,
-		locator.Accuracy,
-		dozebool,
-		locator.Battery,
-		locator.Connection,
-		locator.Longitude,
-		locator.Latitude,
-		locator.Altitude,
-		locator.VerticalAccuracy,
-		locator.Speed,
-		locator.User,
-		locator.Device,
-	).Scan(&lastInsertId)
+		time.Now(), locator.DeviceTimestamp, locator.Accuracy, dozebool, locator.Battery, locator.Connection, locator.Longitude, locator.Latitude, locator.Altitude, locator.VerticalAccuracy, locator.Speed, locator.User, locator.Device).Scan(&lastInsertId)
 
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err == nil {
-		log.WithField("id", lastInsertId).Debug("Inserted database location")
+		log.WithField("id", lastInsertId).WithField("messageId", locator.MessageId).Debug("Inserted database location")
 		GeocodingWorkQueue <- lastInsertId
 	} else {
 		return err

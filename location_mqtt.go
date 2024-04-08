@@ -154,12 +154,12 @@ func (env *Env) handler(_ mqtt.Client, msg mqtt.Message) {
 	err = backoff.Retry(insertFunc, b)
 }
 
-func insertToDatabase(locator MQTTMsg, msg mqtt.Message, db *sql.DB) error {
+func insertToDatabase(locationmessage MQTTMsg, msg mqtt.Message, db *sql.DB) error {
 	ctx := context.Background()
 	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
 	defer timeTrack(time.Now())
 	defer cancelFn()
-	dozebool := bool(locator.Doze)
+	dozebool := bool(locationmessage.Doze)
 	var lastInsertId int
 	err := db.QueryRowContext(ctx, `insert into locations
 (timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
@@ -167,10 +167,10 @@ func insertToDatabase(locator MQTTMsg, msg mqtt.Message, db *sql.DB) error {
 values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13)
 RETURNING id`,
 
-		time.Now(), locator.DeviceTimestamp, locator.Accuracy, dozebool, locator.Battery, locator.Connection, locator.Longitude, locator.Latitude, locator.Altitude, locator.VerticalAccuracy, locator.Speed, locator.User, locator.Device).Scan(&lastInsertId)
+		time.Now(), locationmessage.DeviceTimestamp, locationmessage.Accuracy, dozebool, locationmessage.Battery, locationmessage.Connection, locationmessage.Longitude, locationmessage.Latitude, locationmessage.Altitude, locationmessage.VerticalAccuracy, locationmessage.Speed, locationmessage.User, locationmessage.Device).Scan(&lastInsertId)
 
 	if ctx.Err() != nil { // We may have timed out
-		log.WithError(ctx.Err()).Error("Context error")
+		log.WithError(ctx.Err()).WithField("timestamp", locationmessage.DeviceTimestamp.String()).WithField("messageId", locationmessage.MessageId).Error("Context error")
 		return ctx.Err()
 	}
 	if err != nil { // Database error
@@ -191,7 +191,7 @@ RETURNING id`,
 		}
 	} else {
 		msg.Ack()
-		log.WithField("id", lastInsertId).WithField("messageId", locator.MessageId).Debug("Inserted database location")
+		log.WithField("id", lastInsertId).WithField("messageId", locationmessage.MessageId).Debug("Inserted database location")
 		GeocodingWorkQueue <- lastInsertId
 	}
 	return nil

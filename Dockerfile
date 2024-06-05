@@ -14,7 +14,7 @@ COPY . /app
 
 RUN --mount=type=cache,target=/root/.cache/go-build go build -ldflags="-w -s"
 
-FROM alpine:3.19 as cert-fetcher
+FROM alpine:3.20 as cert-fetcher
 
 RUN echo "ot-pg-recorder:x:10001:10001:OwnTracksPgRecorder,,,:/home/ot-pg-recorder:/bin/false" > /passwd
 

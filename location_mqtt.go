@@ -58,7 +58,7 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	mqttClientOptions.AutoAckDisabled = true
 
 	mqttClientOptions.SetOnConnectHandler(func(client mqtt.Client) {
-		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.handler)
+		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.mqttMessageHandler)
 		if err != nil {
 			log.WithField("topic", env.configuration.MQTTTopic).WithError(err).Error("Unable to subscribe to MQTT topic")
 		}
@@ -74,12 +74,10 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	}
 	log.Info("MQTT Connected")
 
-	select {
-	case <-quit:
-		mqttClient.Disconnect(100)
-		log.Info("Closing MQTT")
-		return nil
-	}
+	<-quit
+	mqttClient.Disconnect(100)
+	log.Info("Closing MQTT")
+	return nil
 }
 
 func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageHandler) error {
@@ -112,7 +110,7 @@ func filterUsersContainsUser(filterUsers string, user string) bool {
 	return false
 }
 
-func (env *Env) handler(_ mqtt.Client, msg mqtt.Message) {
+func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 	log.WithField("topic", msg.Topic()).
 		WithField("qos", msg.Qos()).
 		WithField("retained", msg.Retained()).
@@ -152,14 +150,20 @@ func (env *Env) handler(_ mqtt.Client, msg mqtt.Message) {
 		return insertToDatabase(locationMessage, msg, env.db)
 	}
 	err = backoff.Retry(insertFunc, b)
+	if err != nil {
+		log.WithError(err).
+			WithField("timestamp", locationMessage.DeviceTimestamp.String()).
+			WithField("messageId", locationMessage.MessageId).
+			Error("unable to create backoff for database insert on message")
+	}
 }
 
-func insertToDatabase(locationmessage MQTTMsg, msg mqtt.Message, db *sql.DB) error {
+func insertToDatabase(locationMessage MQTTMsg, msg mqtt.Message, db *sql.DB) error {
 	ctx := context.Background()
 	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
 	defer timeTrack(time.Now())
 	defer cancelFn()
-	dozebool := bool(locationmessage.Doze)
+	dozeBoolean := bool(locationMessage.Doze)
 	var lastInsertId int
 	err := db.QueryRowContext(ctx, `insert into locations
 (timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
@@ -167,10 +171,10 @@ func insertToDatabase(locationmessage MQTTMsg, msg mqtt.Message, db *sql.DB) err
 values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13)
 RETURNING id`,
 
-		time.Now(), locationmessage.DeviceTimestamp, locationmessage.Accuracy, dozebool, locationmessage.Battery, locationmessage.Connection, locationmessage.Longitude, locationmessage.Latitude, locationmessage.Altitude, locationmessage.VerticalAccuracy, locationmessage.Speed, locationmessage.User, locationmessage.Device).Scan(&lastInsertId)
+		time.Now(), locationMessage.DeviceTimestamp, locationMessage.Accuracy, dozeBoolean, locationMessage.Battery, locationMessage.Connection, locationMessage.Longitude, locationMessage.Latitude, locationMessage.Altitude, locationMessage.VerticalAccuracy, locationMessage.Speed, locationMessage.User, locationMessage.Device).Scan(&lastInsertId)
 
 	if ctx.Err() != nil { // We may have timed out
-		log.WithError(ctx.Err()).WithField("timestamp", locationmessage.DeviceTimestamp.String()).WithField("messageId", locationmessage.MessageId).Error("Context error")
+		log.WithError(ctx.Err()).WithField("timestamp", locationMessage.DeviceTimestamp.String()).WithField("messageId", locationMessage.MessageId).Error("Context error")
 		return ctx.Err()
 	}
 	if err != nil { // Database error
@@ -191,7 +195,7 @@ RETURNING id`,
 		}
 	} else {
 		msg.Ack()
-		log.WithField("id", lastInsertId).WithField("messageId", locationmessage.MessageId).Debug("Inserted database location")
+		log.WithField("id", lastInsertId).WithField("messageId", locationMessage.MessageId).Debug("Inserted database location")
 		GeocodingWorkQueue <- lastInsertId
 	}
 	return nil

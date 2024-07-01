@@ -39,7 +39,7 @@ type Location struct {
 
 func (env *Env) GetLastLocations() (*[]Location, error) {
 	if env.db == nil {
-		return nil, errors.New("No database connection available.")
+		return nil, errors.New("no database connection available")
 	}
 	defer timeTrack(time.Now())
 	query := `select distinct on ("user") "user",
@@ -112,7 +112,7 @@ order by devicetimestamp desc limit 1 `
 
 func (env *Env) GetTotalDistanceInMiles() (float64, error) {
 	if env.db == nil {
-		return 0, errors.New("No database connection available")
+		return 0, errors.New("no database connection available")
 	}
 	var distance float64
 	defer timeTrack(time.Now())
@@ -126,7 +126,7 @@ func (env *Env) GetTotalDistanceInMiles() (float64, error) {
 
 func (env *Env) GetLocationsBetweenDates(from time.Time, to time.Time, user string, device string) (*[]Location, error) {
 	if env.db == nil {
-		return nil, errors.New("No database connection available")
+		return nil, errors.New("no database connection available")
 	}
 	defer timeTrack(time.Now())
 	query := `select coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', ''),
@@ -151,7 +151,9 @@ order by devicetimestamp desc`
 		return nil, err
 	}
 
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	var locations []Location
 	var timestamp time.Time
 	for rows.Next() {
@@ -169,8 +171,6 @@ order by devicetimestamp desc`
 
 }
 
-/* HTTP handlers */
-/* /location */
 func (env *Env) LocationHandler(c *gin.Context) {
 	slog.Debug("Getting last location for default user", "user", env.configuration.DefaultUser)
 	location, err := env.GetLastLocationForUser(env.configuration.DefaultUser)
@@ -213,10 +213,12 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 		rows, err = env.db.Query(`select distinct "user" from locations order by "user";`)
 	}
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	var results []string
 	for rows.Next() {
 		var user string
@@ -307,15 +309,15 @@ func OTVersionHandler(c *gin.Context) {
 	c.JSON(200, gin.H{"version": "1.0-owntracks-pg-recorder"})
 }
 
-var wsupgrader = websocket.Upgrader{
+var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 }
 
 func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 	// At the moment, this is just an echo impl. At some point publish new updates down this.
-	wsupgrader.CheckOrigin = func(r *http.Request) bool { return true }
-	conn, err := wsupgrader.Upgrade(w, r, nil)
+	wsUpgrader.CheckOrigin = func(r *http.Request) bool { return true }
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("Failed to set websocket upgrade", "err", err)
 		return
@@ -342,7 +344,6 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				slog.Warn("error writing message to ws", "err", err)
 			}
-			break
 		default:
 			break
 		}
@@ -430,7 +431,9 @@ order by c desc limit 20
 		c.Abort()
 		return
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	var results []LocationCountPerDay
 	for rows.Next() {
 		var result LocationCountPerDay
@@ -479,12 +482,11 @@ func (env *Env) GetPointsForDate(c *gin.Context) {
        devicetimestamp,
        accuracy,
        concat(st_y(st_astext(point)), ',', st_x(st_astext(point)))                                     as latlng,
-       coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '')                               as address,
+       coalesce(geocoding - > 'results' - > 0 ->> 'formatted_address', '')                             as address,
        st_distance(locations.point,
                    lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
        coalesce(3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
-                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) +
-                 1),
+                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) + 1),
                 0)                                                                                     AS speed
 FROM locations
 where devicetimestamp::date = $1
@@ -492,17 +494,19 @@ ORDER BY devicetimestamp `
 	rows, err := env.db.Query(query, date)
 	if err != nil {
 		slog.Error("Error querying points from db", "err", err)
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	var locations []LocationWithMetadata
 	for rows.Next() {
 		location := LocationWithMetadata{}
 		err := rows.Scan(&location.Id, &location.Timestamp, &location.Accuracy, &location.LatLng, &location.Geocoding, &location.Distance, &location.Speed)
 		if err != nil {
-			c.Error(err)
+			_ = c.Error(err)
 			return
 		}
 		locations = append(locations, location)
@@ -519,36 +523,36 @@ func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
        devicetimestamp,
        accuracy,
        concat(st_y(st_astext(point)), ',', st_x(st_astext(point)))                                     as latlng,
-       coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', '')                               as address,
+       coalesce(geocoding - > 'results' - > 0 ->> 'formatted_address', '')                             as address,
        st_distance(locations.point,
                    lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
        coalesce(3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
-                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) +
-                 1),
+                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) + 1),
                 0)                                                                                     AS speed
 FROM locations
-ORDER BY speed DESC
-LIMIT %d
+ORDER BY speed DESC LIMIT %d
 `, NumberOfInaccuratePoints)
 	rows, err := env.db.Query(query)
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	var locations []LocationWithMetadata
 	for rows.Next() {
 		location := LocationWithMetadata{}
 		err := rows.Scan(&location.Id, &location.Timestamp, &location.Accuracy, &location.LatLng, &location.Geocoding, &location.Distance, &location.Speed)
 		if err != nil {
-			c.Error(err)
+			_ = c.Error(err)
 			return
 		}
 		locations = append(locations, location)
 	}
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 	if locations == nil {
@@ -594,11 +598,13 @@ ORDER by devicetimestamp ASC`
 
 	rows, err := env.db.Query(query)
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	writer := c.Writer
 	header := writer.Header()
 	header.Set("Content-Type", "application/json")

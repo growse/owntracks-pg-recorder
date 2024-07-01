@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,21 +14,6 @@ import (
 	geojson "github.com/paulmach/go.geojson"
 	log "github.com/sirupsen/logrus"
 )
-
-type GeoLocation struct {
-	Status  string            `json:"status"`
-	Results []GeocodingResult `json:"results"`
-}
-
-type GeocodingResult struct {
-	AddressComponents []GeocodingAddressComponent `json:"address_components"`
-}
-
-type GeocodingAddressComponent struct {
-	LongName  string   `json:"long_name"`
-	ShortName string   `json:"short_name"`
-	Types     []string `json:"types"`
-}
 
 type OpencageReverseGeocodeResult struct {
 	Bounds struct {
@@ -75,9 +60,7 @@ type OpencageReverseGeocodeResponse struct {
 	Results []OpencageReverseGeocodeResult `json:"results" binding:"required"`
 }
 
-/*
-Extract a sane name from the geocoding object
-*/
+// GeocodedName extracts a sane name from the geocoded name component
 func (location *Location) GeocodedName() string {
 	unknownLocation := "Unknown"
 	var geoLocation []OpencageReverseGeocodeResult
@@ -100,12 +83,12 @@ func (location *Location) GeocodedName() string {
 
 func (env *Env) GetGeocoding(place string) (*geojson.FeatureCollection, error) {
 	if env.configuration.GeocodeApiURL == "" {
-		err := errors.New("Geocoding API should not be blank")
+		err := errors.New("geocoding API should not be blank")
 		InternalError(err)
 		return nil, err
 	}
 	if place == "" {
-		err := errors.New("Place should not be blank")
+		err := errors.New("place should not be blank")
 		InternalError(err)
 		return nil, err
 	}
@@ -115,11 +98,11 @@ func (env *Env) GetGeocoding(place string) (*geojson.FeatureCollection, error) {
 	if err != nil {
 		return nil, err
 	}
-	featureColletion, err := geojson.UnmarshalFeatureCollection([]byte(geocodingResponse))
+	featureCollection, err := geojson.UnmarshalFeatureCollection([]byte(geocodingResponse))
 	if err != nil {
 		return nil, err
 	}
-	return featureColletion, nil
+	return featureCollection, nil
 }
 
 func RoundCoordinate(input float64) float64 {
@@ -135,7 +118,7 @@ var reverseGeocodeCache = cache.New(cache.NoExpiration, 0)
 
 func (location *Location) GetReverseGeocoding(env *Env) (string, error) {
 	if env.configuration.ReverseGeocodeApiURL == "" {
-		err := errors.New("Reverse Geocoding API should not be blank")
+		err := errors.New("reverse Geocoding API should not be blank")
 		InternalError(err)
 		return "", err
 	}
@@ -183,13 +166,15 @@ func fetchGeocodingResponse(geocodingUrl string) (string, error) {
 		return "", err
 	}
 
-	defer response.Body.Close()
-	body, err := ioutil.ReadAll(response.Body)
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if response.StatusCode != 200 {
 		if err == nil {
 			body = []byte("")
 		}
-		err := errors.New(fmt.Sprintf("invalid response from Geolocation API: %v %v", response.StatusCode, body))
+		err := fmt.Errorf("invalid response from Geolocation API: %v %v", response.StatusCode, body)
 		InternalError(err)
 		return "", err
 	}

@@ -11,6 +11,21 @@
     IMAGE_NAME: ${{ github.repository }}
 
   jobs:
+    lint:
+      name: Lint
+      runs-on: ubuntu-latest
+      permissions:
+        # Required: allow read access to the content for analysis.
+        contents: read
+        # Optional: allow read access to pull request. Use with `only-new-issues` option.
+        pull-requests: read
+        # Optional: allow write access to checks to allow the action to annotate code in the PR.
+        checks: write
+      steps:
+        - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        - name: Golangci-lint
+          uses: golangci/golangci-lint-action@v6.0.1
+
     build:
       name: Build
       runs-on: ubuntu-latest

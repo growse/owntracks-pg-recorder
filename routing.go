@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"html/template"
 	"net/http"
 	_ "time"
@@ -15,6 +16,8 @@ var embedFs embed.FS
 func (env *Env) BuildRoutes(router *gin.Engine) {
 	router.Use(ErrorHandler)
 	router.SetHTMLTemplate(template.Must(template.New("").ParseFS(embedFs, "templates/*.gohtml")))
+
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	router.GET("place/", func(c *gin.Context) {
 		c.HTML(200, "place.gohtml", nil)

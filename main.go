@@ -25,6 +25,7 @@ func InternalError(err error) {
 type Env struct {
 	db            *sql.DB
 	configuration *Configuration
+	metrics       *Metrics
 }
 
 func main() {
@@ -55,7 +56,7 @@ func main() {
 		slog.Error("Unable to parse config", "err", err)
 		os.Exit(1)
 	}
-	env := &Env{db: nil, configuration: configuration}
+	env := &Env{db: nil, configuration: configuration, metrics: NewMetrics()}
 
 	if env.configuration.Debug {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))

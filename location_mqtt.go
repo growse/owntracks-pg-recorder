@@ -154,7 +154,9 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 		log.WithError(err).
 			WithField("timestamp", locationMessage.DeviceTimestamp.String()).
 			WithField("messageId", locationMessage.MessageId).
-			Error("unable to create backoff for database insert on message")
+			Error("unable to insert location message to database")
+	} else {
+		env.metrics.locationsReceived.Inc()
 	}
 }
 

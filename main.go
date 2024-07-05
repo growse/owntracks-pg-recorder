@@ -92,7 +92,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	router := gin.Default()
-	env.BuildRoutes(router)
+	env.BuildRoutes(configuration, router)
 	slog.Info("Listening on HTTP", "httpPort", env.configuration.Port)
 	err = manners.ListenAndServe(fmt.Sprintf(":%d", env.configuration.Port), router)
 	if err != nil {

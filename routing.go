@@ -13,11 +13,13 @@ import (
 //go:embed templates/*
 var embedFs embed.FS
 
-func (env *Env) BuildRoutes(router *gin.Engine) {
+func (env *Env) BuildRoutes(configuration *Configuration, router *gin.Engine) {
 	router.Use(ErrorHandler)
 	router.SetHTMLTemplate(template.Must(template.New("").ParseFS(embedFs, "templates/*.gohtml")))
 
-	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	if configuration.EnablePrometheus {
+		router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	}
 
 	router.GET("place/", func(c *gin.Context) {
 		c.HTML(200, "place.gohtml", nil)

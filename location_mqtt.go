@@ -147,7 +147,7 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = 1 * time.Minute
 	insertFunc := func() error {
-		return insertToDatabase(locationMessage, msg, env.db)
+		return insertToDatabase(env.configuration.GeocodeOnInsert, env.configuration.EnablePrometheus, env.metrics, locationMessage, msg, env.db)
 	}
 	err = backoff.Retry(insertFunc, b)
 	if err != nil {
@@ -155,12 +155,10 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 			WithField("timestamp", locationMessage.DeviceTimestamp.String()).
 			WithField("messageId", locationMessage.MessageId).
 			Error("unable to insert location message to database")
-	} else {
-		env.metrics.locationsReceived.Inc()
 	}
 }
 
-func insertToDatabase(locationMessage MQTTMsg, msg mqtt.Message, db *sql.DB) error {
+func insertToDatabase(geoCodeOnInsert bool, enablePrometheus bool, metrics *Metrics, locationMessage MQTTMsg, msg mqtt.Message, db *sql.DB) error {
 	ctx := context.Background()
 	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
 	defer timeTrack(time.Now())
@@ -198,7 +196,12 @@ RETURNING id`,
 	} else {
 		msg.Ack()
 		log.WithField("id", lastInsertId).WithField("messageId", locationMessage.MessageId).Debug("Inserted database location")
-		GeocodingWorkQueue <- lastInsertId
+		if enablePrometheus {
+			metrics.locationsReceived.Inc()
+		}
+		if geoCodeOnInsert {
+			GeocodingWorkQueue <- lastInsertId
+		}
 	}
 	return nil
 }

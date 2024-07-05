@@ -24,6 +24,8 @@ type Configuration struct {
 	Debug                  bool   `default:"false" split_words:"false"`
 	FilterUsers            string `default:"" split_words:"false"`
 	DefaultUser            string `default:"" split_words:"false"`
+	GeocodeOnInsert        bool   `default:"false" split_words:"true"`
+	EnablePrometheus       bool   `default:"false" split_words:"true"`
 }
 
 func getConfiguration() (*Configuration, error) {

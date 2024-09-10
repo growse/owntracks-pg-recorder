@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/eclipse/paho.mqtt.golang"
-	"github.com/lib/pq"
-	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/lib/pq"
+	log "github.com/sirupsen/logrus"
 )
 
 type MQTTMsg struct {
@@ -26,6 +27,7 @@ type MQTTMsg struct {
 	Longitude            float64            `json:"lon"`
 	Speed                float32            `json:"vel"`
 	Altitude             float32            `json:"alt"`
+	Course               int                `json:"cog"`
 	DeviceTimestampAsInt int64              `json:"tst" binding:"required"`
 	DeviceTimestamp      time.Time
 	User                 string
@@ -167,11 +169,11 @@ func insertToDatabase(geoCodeOnInsert bool, enablePrometheus bool, metrics *Metr
 	var lastInsertId int
 	err := db.QueryRowContext(ctx, `insert into locations
 (timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
- "user", device)
-values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13)
+ "user", device, cog)
+values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13, $14)
 RETURNING id`,
 
-		time.Now(), locationMessage.DeviceTimestamp, locationMessage.Accuracy, dozeBoolean, locationMessage.Battery, locationMessage.Connection, locationMessage.Longitude, locationMessage.Latitude, locationMessage.Altitude, locationMessage.VerticalAccuracy, locationMessage.Speed, locationMessage.User, locationMessage.Device).Scan(&lastInsertId)
+		time.Now(), locationMessage.DeviceTimestamp, locationMessage.Accuracy, dozeBoolean, locationMessage.Battery, locationMessage.Connection, locationMessage.Longitude, locationMessage.Latitude, locationMessage.Altitude, locationMessage.VerticalAccuracy, locationMessage.Speed, locationMessage.User, locationMessage.Device, locationMessage.Course).Scan(&lastInsertId)
 
 	if ctx.Err() != nil { // We may have timed out
 		log.WithError(ctx.Err()).WithField("timestamp", locationMessage.DeviceTimestamp.String()).WithField("messageId", locationMessage.MessageId).Error("Context error")

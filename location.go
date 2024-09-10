@@ -7,14 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dustin/go-humanize"
-	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
-	"github.com/martinlindhe/unit"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/dustin/go-humanize"
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	"github.com/martinlindhe/unit"
 )
 
 /*
@@ -31,6 +32,7 @@ type Location struct {
 	Longitude        float64 `json:"lon" binding:"required"`
 	Altitude         float32 `json:"alt" binding:"required"`
 	VerticalAccuracy float32 `json:"vac" binding:"required"`
+	Course           float32 `json:"cog" binding:"optional"`
 	Speed            float32 `json:"vel" binding:"required"`
 	Geocoding        string  `json:"addr" binding:"optional"`
 	Username         string  `json:"username" binding:"optional"`

@@ -181,7 +181,8 @@ func (env *Env) LocationHandler(c *gin.Context) {
 		return
 	}
 	distance, err := env.GetTotalDistanceInMiles()
-	if err != nil {
+	if err !=
+		nil {
 		c.String(500, err.Error())
 		return
 	}
@@ -386,7 +387,7 @@ where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
 group by date (devicetimestamp)
 order by c desc limit 20
 `, bounds["northeast"].(map[string]interface{})["lng"], bounds["northeast"].(map[string]interface{})["lat"], bounds["southwest"].(map[string]interface{})["lng"], bounds["southwest"].(map[string]interface{})["lat"])
-	} else if feature.Geometry.IsPoint() && feature.Properties["confidence"] != nil && feature.Properties["confidence"].(float64) >= 1 && feature.Properties["confidence"].(float64) <= 10 {
+	} else if feature.Geometry.IsPoint() && feature.Geometry.Point != nil && feature.Properties["confidence"] != nil && feature.Properties["confidence"].(float64) >= 1 && feature.Properties["confidence"].(float64) <= 10 {
 		var radius int
 		switch confidence := feature.Properties["confidence"].(float64); confidence {
 		case 10:

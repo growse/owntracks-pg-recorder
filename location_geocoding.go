@@ -161,7 +161,7 @@ func fetchGeocodingResponse(geocodingUrl string) (string, error) {
 	defer timeTrack(time.Now())
 	response, err := http.Get(geocodingUrl)
 
-	if err != nil {
+	if err != nil || response == nil {
 		log.WithError(err).Error("Error getting geolocation from API")
 		return "", err
 	}

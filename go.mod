@@ -62,4 +62,4 @@ require (
 
 go 1.23.0
 
-toolchain go1.23.1
+toolchain go1.23.2

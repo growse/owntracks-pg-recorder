@@ -53,6 +53,7 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	}
 	mqttClientOptions.CleanSession = false
 	mqttClientOptions.ResumeSubs = true
+	mqttClientOptions.ProtocolVersion = 4
 	mqttClientOptions.SetAutoReconnect(true)
 	mqttClientOptions.ClientID = env.configuration.MQTTClientId
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)

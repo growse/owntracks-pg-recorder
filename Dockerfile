@@ -1,4 +1,4 @@
-FROM golang:1.23.5 as builder
+FROM golang:1.23.6 as builder
 
 LABEL org.opencontainers.image.source https://github.com/growse/owntracks-pg-recorder
 

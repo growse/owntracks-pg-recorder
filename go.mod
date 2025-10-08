@@ -2,7 +2,7 @@ module github.com/growse/owntracks-pg-recorder
 
 require (
 	github.com/braintree/manners v0.0.0-20160418043613-82a8879fc5fd
-	github.com/cenkalti/backoff/v4 v4.1.2
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/dustin/go-humanize v1.0.1
 	github.com/eclipse/paho.mqtt.golang v1.5.1

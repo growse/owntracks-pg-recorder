@@ -6,7 +6,18 @@ import (
 )
 
 func TestMQTTMarshallWorks(t *testing.T) {
-	testMsg := "{\"_type\":\"location\",\"tid\":\"s5\",\"acc\":20,\"batt\":90,\"conn\":\"m\",\"doze\":true,\"lat\":51.7471862,\"lon\":-0.4734345,\"t\":\"u\",\"tst\":1483358150}"
+	testMsg := `{
+  "_type": "location",
+  "tid": "s5",
+  "acc": 20,
+  "batt": 90,
+  "conn": "m",
+  "doze": true,
+  "lat": 51.7471862,
+  "lon": -0.4734345,
+  "t": "u",
+  "tst": 1483358150
+}`
 
 	var locator MQTTMsg
 

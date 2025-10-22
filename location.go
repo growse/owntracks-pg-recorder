@@ -25,6 +25,7 @@ This should be some sort of thing that's sent from the phone
 
 const NumberOfInaccuratePoints = 20
 
+//nolint:tagliatelle
 type Location struct {
 	Timestamp        int64   `binding:"required" json:"tst"`
 	Accuracy         float32 `binding:"required" json:"acc"`
@@ -40,12 +41,13 @@ type Location struct {
 	Device           string  `binding:"optional" json:"device"`
 }
 
-func (env *Env) GetLastLocations() (*[]Location, error) {
-	if env.db == nil {
+//nolint:funlen
+func (env *Env) GetLastLocations(ctx context.Context) (*[]Location, error) {
+	if env.database == nil {
 		return nil, errors.New("no database connection available")
 	}
 
-	defer timeTrack(time.Now())
+	defer timeTrack(ctx, time.Now())
 
 	query := `select distinct on ("user") "user",
                             device,
@@ -60,8 +62,14 @@ func (env *Env) GetLastLocations() (*[]Location, error) {
 from locations
 order by "user", devicetimestamp desc`
 
-	rows, err := env.db.Query(query)
+	rows, err := env.database.QueryContext(ctx, query)
 	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	if rows.Err() != nil {
 		return nil, err
 	}
 
@@ -94,7 +102,7 @@ order by "user", devicetimestamp desc`
 
 		if err != nil {
 			slog.With("err", err).
-				ErrorContext(context.Background(), "Unable to pull latest location row out of database")
+				ErrorContext(ctx, "Unable to pull latest location row out of database")
 		} else {
 			locations = append(locations, location)
 		}
@@ -103,12 +111,12 @@ order by "user", devicetimestamp desc`
 	return &locations, nil
 }
 
-func (env *Env) GetLastLocationForUser(user string) (*Location, error) {
-	if env.db == nil {
+func (env *Env) GetLastLocationForUser(ctx context.Context, user string) (*Location, error) {
+	if env.database == nil {
 		return nil, errors.New("no database connection available")
 	}
 
-	defer timeTrack(time.Now())
+	defer timeTrack(ctx, time.Now())
 
 	query := `select "user",
        device,
@@ -122,7 +130,7 @@ func (env *Env) GetLastLocationForUser(user string) (*Location, error) {
        speed
 from locations
 where "user" = $1
-order by devicetimestamp desc limit 1 `
+order by devicetimestamp desc limit 1`
 	location := Location{Type: "location"}
 
 	var (
@@ -130,8 +138,19 @@ order by devicetimestamp desc limit 1 `
 		timestamp      time.Time
 	)
 
-	err := env.db.QueryRow(query, user).
-		Scan(&location.Username, &location.Device, &geocodingMaybe, &location.Latitude, &location.Longitude, &timestamp, &location.Accuracy, &location.Altitude, &location.VerticalAccuracy, &location.Speed)
+	err := env.database.QueryRowContext(ctx, query, user).
+		Scan(
+			&location.Username,
+			&location.Device,
+			&geocodingMaybe,
+			&location.Latitude,
+			&location.Longitude,
+			&timestamp,
+			&location.Accuracy,
+			&location.Altitude,
+			&location.VerticalAccuracy,
+			&location.Speed,
+		)
 	if geocodingMaybe.Valid {
 		location.Geocoding = geocodingMaybe.String
 	}
@@ -145,16 +164,17 @@ order by devicetimestamp desc limit 1 `
 	return &location, nil
 }
 
-func (env *Env) GetTotalDistanceInMiles() (float64, error) {
-	if env.db == nil {
+func (env *Env) GetTotalDistanceInMiles(ctx context.Context) (float64, error) {
+	if env.database == nil {
 		return 0, errors.New("no database connection available")
 	}
 
 	var distance float64
 
-	defer timeTrack(time.Now())
+	defer timeTrack(ctx, time.Now())
 
-	err := env.db.QueryRow("select distance from locations_distance_this_year").Scan(&distance)
+	err := env.database.QueryRowContext(ctx, "select distance from locations_distance_this_year").
+		Scan(&distance)
 	if err != nil {
 		return 0, err
 	}
@@ -164,17 +184,19 @@ func (env *Env) GetTotalDistanceInMiles() (float64, error) {
 	return distanceInMeters.Miles(), nil
 }
 
+//nolint:funlen
 func (env *Env) GetLocationsBetweenDates(
+	ctx context.Context,
 	from time.Time,
 	to time.Time,
 	user string,
 	device string,
 ) (*[]Location, error) {
-	if env.db == nil {
+	if env.database == nil {
 		return nil, errors.New("no database connection available")
 	}
 
-	defer timeTrack(time.Now())
+	defer timeTrack(ctx, time.Now())
 
 	query := `select coalesce(geocoding -> 'results' -> 0 ->> 'formatted_address', ''),
        ST_Y(ST_AsText(point)),
@@ -194,14 +216,16 @@ where devicetimestamp >= $1
   and device = $4
 order by devicetimestamp desc`
 
-	rows, err := env.db.Query(query, from, to, user, device)
+	rows, err := env.database.QueryContext(ctx, query, from, to, user, device)
 	if err != nil {
 		return nil, err
 	}
 
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
+
+	if rows.Err() != nil {
+		return nil, err
+	}
 
 	var (
 		locations []Location
@@ -235,17 +259,18 @@ order by devicetimestamp desc`
 }
 
 func (env *Env) LocationHandler(c *gin.Context) {
+	ctx := c.Request.Context()
 	slog.With("user", env.configuration.DefaultUser).
 		DebugContext(c.Request.Context(), "Getting last location for default user")
 
-	location, err := env.GetLastLocationForUser(env.configuration.DefaultUser)
+	location, err := env.GetLastLocationForUser(ctx, env.configuration.DefaultUser)
 	if err != nil {
 		c.String(500, err.Error())
 
 		return
 	}
 
-	distance, err := env.GetTotalDistanceInMiles()
+	distance, err := env.GetTotalDistanceInMiles(ctx)
 	if err !=
 		nil {
 		c.String(500, err.Error())
@@ -258,7 +283,7 @@ func (env *Env) LocationHandler(c *gin.Context) {
 		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jal 2006 15:04:05 GMT"),
 	)
 	c.JSON(200, gin.H{
-		"name":          location.GeocodedName(),
+		"name":          location.GeocodedName(ctx),
 		"latitude":      fmt.Sprintf("%.2f", location.Latitude),
 		"longitude":     fmt.Sprintf("%.2f", location.Longitude),
 		"totalDistance": humanize.FormatFloat("#,###.##", distance),
@@ -266,7 +291,9 @@ func (env *Env) LocationHandler(c *gin.Context) {
 }
 
 func (env *Env) LocationHeadHandler(c *gin.Context) {
-	location, err := env.GetLastLocationForUser(env.configuration.DefaultUser)
+	ctx := c.Request.Context()
+
+	location, err := env.GetLastLocationForUser(ctx, env.configuration.DefaultUser)
 	if err != nil {
 		c.String(500, err.Error())
 
@@ -287,16 +314,22 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 	)
 
 	if c.Query("user") != "" {
-		rows, err = env.db.Query(
+		rows, err = env.database.Query(
 			`select distinct "device" from locations where "user"=$1 order by "device";`,
 			c.Query("user"),
 		)
 	} else {
-		rows, err = env.db.Query(`select distinct "user" from locations order by "user";`)
+		rows, err = env.database.Query(`select distinct "user" from locations order by "user";`)
 	}
 
 	if err != nil {
 		_ = c.Error(err)
+
+		return
+	}
+
+	if rows.Err() != nil {
+		_ = c.Error(rows.Err())
 
 		return
 	}
@@ -311,7 +344,8 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 
 		err := rows.Scan(&user)
 		if err != nil {
-			slog.With("err", err).ErrorContext(c.Request.Context(), "Error pulling user from db")
+			slog.With("err", err).
+				ErrorContext(c.Request.Context(), "Error pulling user from database")
 		}
 
 		results = append(results, user)
@@ -322,12 +356,14 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 	})
 }
 
+//nolint:cyclop
 func (env *Env) OTLastPosHandler(c *gin.Context) {
+	ctx := c.Request.Context()
 	user := c.Query("user")
 
 	device := c.Query("device")
 	if user != "" && device != "" {
-		location, err := env.GetLastLocationForUser(user)
+		location, err := env.GetLastLocationForUser(ctx, user)
 		if err != nil {
 			c.String(500, err.Error())
 
@@ -336,7 +372,7 @@ func (env *Env) OTLastPosHandler(c *gin.Context) {
 
 		c.JSON(200, [1]*Location{location})
 	} else {
-		locations, err := env.GetLastLocations()
+		locations, err := env.GetLastLocations(ctx)
 		if err != nil {
 			c.String(500, err.Error())
 
@@ -352,8 +388,8 @@ func (env *Env) OTLastPosHandler(c *gin.Context) {
 		var filteredLocations []Location
 
 		for _, location := range *locations {
-			if device == "" || (device != "" && location.Device == device) {
-				if user == "" || (user != "" && location.Username == user) {
+			if device == "" || location.Device == device {
+				if user == "" || (location.Username == user) {
 					filteredLocations = append(filteredLocations, location)
 				}
 			}
@@ -363,8 +399,10 @@ func (env *Env) OTLastPosHandler(c *gin.Context) {
 	}
 }
 
+const iso8061fmt = "2006-01-02T15:04:05"
+
 func (env *Env) OTLocationsHandler(c *gin.Context) {
-	const iso8061fmt = "2006-01-02T15:04:05"
+	ctx := c.Request.Context()
 
 	from := c.DefaultQuery("from", time.Now().AddDate(0, 0, -1).Format(iso8061fmt))
 	to := c.DefaultQuery("to", time.Now().Format(iso8061fmt))
@@ -386,7 +424,7 @@ func (env *Env) OTLocationsHandler(c *gin.Context) {
 	user := c.Query("user")
 	device := c.Query("device")
 
-	locations, err := env.GetLocationsBetweenDates(fromTime, toTime, user, device)
+	locations, err := env.GetLocationsBetweenDates(ctx, fromTime, toTime, user, device)
 	if err != nil {
 		c.String(500, err.Error())
 
@@ -402,7 +440,7 @@ func (env *Env) OTLocationsHandler(c *gin.Context) {
 	response := struct {
 		Data []Location `json:"data"`
 	}{*locations}
-	responseBytes, _ := json.Marshal(response)
+	responseBytes, _ := json.Marshal(response) //nolint:errchkjson
 	responseReader := bytes.NewReader(responseBytes)
 	c.DataFromReader(200, int64(len(responseBytes)), "application/json", responseReader, nil)
 }
@@ -418,11 +456,14 @@ var wsUpgrader = websocket.Upgrader{
 
 func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 	// At the moment, this is just an echo impl. At some point publish new updates down this.
-	wsUpgrader.CheckOrigin = func(r *http.Request) bool { return true }
+	wsUpgrader.CheckOrigin = func(_ *http.Request) bool { return true }
+
+	ctx := r.Context()
 
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		slog.With("err", err).ErrorContext(r.Context(), "Failed to set websocket upgrade")
+		slog.With("err", err).
+			ErrorContext(ctx, "Failed to set websocket upgrade")
 
 		return
 	}
@@ -435,9 +476,10 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 
 		switch string(msg) {
 		case "LAST":
-			locations, err := env.GetLastLocations()
+			locations, err := env.GetLastLocations(ctx)
 			if err != nil {
-				slog.With("err", err).ErrorContext(r.Context(), "Error fetching last locations")
+				slog.With("err", err).
+					ErrorContext(r.Context(), "Error fetching last locations")
 
 				break
 			}
@@ -452,16 +494,17 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 
 			err = conn.WriteMessage(t, locationAsBytes)
 			if err != nil {
-				slog.With("err", err).WarnContext(r.Context(), "error writing message to ws")
+				slog.With("err", err).
+					WarnContext(r.Context(), "error writing message to ws")
 			}
-		default:
-			break
 		}
 	}
 }
 
+//nolint:cyclop,funlen
 func (env *Env) PlaceHandler(c *gin.Context) {
-	if env.db == nil {
+	ctx := c.Request.Context()
+	if env.database == nil {
 		c.String(500, "No database connection available")
 		c.Abort()
 
@@ -470,9 +513,9 @@ func (env *Env) PlaceHandler(c *gin.Context) {
 
 	place := c.PostForm("place")
 
-	geocoding, err := env.GetGeocoding(place)
+	geocoding, err := env.GetGeocoding(ctx, place)
 	if err != nil {
-		InternalError(err)
+		InternalError(ctx, err)
 		c.String(500, err.Error())
 		c.Abort()
 
@@ -490,9 +533,10 @@ func (env *Env) PlaceHandler(c *gin.Context) {
 
 	var rows *sql.Rows
 
+	//nolint:gocritic
 	if feature.Properties["bounds"] != nil {
 		bounds := feature.Properties["bounds"].(map[string]interface{})
-		rows, err = env.db.Query(`select count(*) as c, date (devicetimestamp)
+		rows, err = env.database.Query(`select count(*) as c, date (devicetimestamp)
 from locations
 where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
     , $2)
@@ -501,8 +545,16 @@ where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
     , 4326)
 group by date (devicetimestamp)
 order by c desc limit 20
-`, bounds["northeast"].(map[string]interface{})["lng"], bounds["northeast"].(map[string]interface{})["lat"], bounds["southwest"].(map[string]interface{})["lng"], bounds["southwest"].(map[string]interface{})["lat"])
-	} else if feature.Geometry.IsPoint() && feature.Geometry.Point != nil && feature.Properties["confidence"] != nil && feature.Properties["confidence"].(float64) >= 1 && feature.Properties["confidence"].(float64) <= 10 {
+`, bounds["northeast"].(map[string]interface{})["lng"],
+			bounds["northeast"].(map[string]interface{})["lat"],
+			bounds["southwest"].(map[string]interface{})["lng"],
+			bounds["southwest"].(map[string]interface{})["lat"],
+		)
+	} else if feature.Geometry.IsPoint() &&
+		feature.Geometry.Point != nil &&
+		feature.Properties["confidence"] != nil &&
+		feature.Properties["confidence"].(float64) >= 1 &&
+		feature.Properties["confidence"].(float64) <= 10 {
 		var radius int
 
 		switch confidence := feature.Properties["confidence"].(float64); confidence {
@@ -530,7 +582,7 @@ order by c desc limit 20
 			radius = 25000
 		}
 
-		rows, err = env.db.Query(`select count(*) as c, date (devicetimestamp)
+		rows, err = env.database.Query(`select count(*) as c, date (devicetimestamp)
 from locations
 where ST_DWithin(point
     , ST_SetSRID(ST_Point( $1
@@ -548,7 +600,7 @@ order by c desc limit 20
 	}
 
 	if err != nil {
-		InternalError(err)
+		InternalError(ctx, err)
 		c.String(500, err.Error())
 		c.Abort()
 
@@ -559,13 +611,21 @@ order by c desc limit 20
 		_ = rows.Close()
 	}(rows)
 
+	if rows.Err() != nil {
+		InternalError(ctx, rows.Err())
+		c.String(500, rows.Err().Error())
+		c.Abort()
+
+		return
+	}
+
 	var results []LocationCountPerDay
 	for rows.Next() {
 		var result LocationCountPerDay
 
 		err := rows.Scan(&result.LocationCount, &result.Date)
 		if err != nil {
-			InternalError(err)
+			InternalError(ctx, err)
 			c.String(500, "Error fetching values from database: %v", err)
 			c.Abort()
 
@@ -583,7 +643,7 @@ order by c desc limit 20
 }
 
 type LocationWithMetadata struct {
-	Id        int64
+	ID        int64
 	Timestamp time.Time
 	Accuracy  float64
 	LatLng    string
@@ -594,19 +654,20 @@ type LocationWithMetadata struct {
 
 func (env *Env) DeleteLocationPoint(c *gin.Context) {
 	id := c.Param("id")
-	slog.With("id", id).InfoContext(c.Request.Context(), "Deleting point")
+	slog.With("id", id).
+		InfoContext(c.Request.Context(), "Deleting point")
 
 	query := `DELETE
 FROM locations
 where id = $1
 	`
 
-	_, err := env.db.Exec(query, id)
+	_, err := env.database.Exec(query, id)
 	if err != nil {
 		slog.With("err", err).
 			With("id", id).
-			ErrorContext(c.Request.Context(), "Error deleting point from db")
-		c.String(http.StatusInternalServerError, "Error deleting point from db %v", err)
+			ErrorContext(c.Request.Context(), "Error deleting point from database")
+		c.String(http.StatusInternalServerError, "Error deleting point from database %v", err)
 		c.Abort()
 	} else {
 		c.Status(http.StatusOK)
@@ -614,7 +675,9 @@ where id = $1
 }
 
 func (env *Env) GetPointsForDate(c *gin.Context) {
+	ctx := c.Request.Context()
 	date := c.Param("date")
+	//nolint:lll
 	query := `SELECT id,
        devicetimestamp,
        accuracy,
@@ -629,24 +692,32 @@ FROM locations
 where devicetimestamp::date = $1
 ORDER BY devicetimestamp `
 
-	rows, err := env.db.Query(query, date)
+	rows, err := env.database.QueryContext(ctx, query, date)
 	if err != nil {
-		slog.With("err", err).ErrorContext(c.Request.Context(), "Error querying points from db")
+		slog.With("err", err).
+			ErrorContext(ctx, "Error querying points from database")
 		_ = c.Error(err)
 
 		return
 	}
 
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
+
+	if rows.Err() != nil {
+		slog.With("err", rows.Err()).
+			ErrorContext(ctx, "Error querying points from database")
+
+		_ = c.Error(rows.Err())
+
+		return
+	}
 
 	var locations []LocationWithMetadata
 	for rows.Next() {
 		location := LocationWithMetadata{}
 
 		err := rows.Scan(
-			&location.Id,
+			&location.ID,
 			&location.Timestamp,
 			&location.Accuracy,
 			&location.LatLng,
@@ -661,49 +732,48 @@ ORDER BY devicetimestamp `
 		}
 
 		locations = append(locations, location)
-	}
-
-	if err != nil {
-		c.String(500, err.Error())
-
-		return
 	}
 
 	c.HTML(200, "points.gohtml", gin.H{"date": date, "results": locations})
 }
 
 func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
-	query := fmt.Sprintf(`SELECT id,
-       devicetimestamp,
-       accuracy,
-       concat(st_y(st_astext(point)), ',', st_x(st_astext(point)))                                     as latlng,
-       coalesce(geocoding - > 'results' - > 0 ->> 'formatted_address', '')                             as address,
-       st_distance(locations.point,
-                   lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
-       coalesce(3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
-                (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) + 1),
-                0)                                                                                     AS speed
+	query := fmt.Sprintf(`SELECT
+    id,
+    devicetimestamp,
+    accuracy,
+    concat(st_y(st_astext(point)), ',', st_x(st_astext(point))) as latlng,
+    coalesce(geocoding - > 'results' - > 0 ->> 'formatted_address', '') as address,
+    st_distance(locations.point,
+                lag(locations.point, 1, locations.point) OVER (ORDER BY locations.devicetimestamp)) AS distance,
+    coalesce(3.6 * ST_Distance(point, lag(point, 1, point) OVER (ORDER BY devicetimestamp ASC)) /
+             (extract('epoch' FROM (devicetimestamp - lag(devicetimestamp) OVER (ORDER BY devicetimestamp ASC))) + 1),
+             0) AS speed
 FROM locations
 ORDER BY speed DESC LIMIT %d
 `, NumberOfInaccuratePoints)
 
-	rows, err := env.db.Query(query)
+	rows, err := env.database.Query(query)
 	if err != nil {
 		_ = c.Error(err)
 
 		return
 	}
 
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
+
+	if rows.Err() != nil {
+		_ = c.Error(rows.Err())
+
+		return
+	}
 
 	var locations []LocationWithMetadata
 	for rows.Next() {
 		location := LocationWithMetadata{}
 
 		err := rows.Scan(
-			&location.Id,
+			&location.ID,
 			&location.Timestamp,
 			&location.Accuracy,
 			&location.LatLng,
@@ -718,12 +788,6 @@ ORDER BY speed DESC LIMIT %d
 		}
 
 		locations = append(locations, location)
-	}
-
-	if err != nil {
-		_ = c.Error(err)
-
-		return
 	}
 
 	if locations == nil {
@@ -742,6 +806,7 @@ type (
 	}
 )
 
+//nolint:tagliatelle
 type DeviceRecord struct {
 	DeviceTimestamp  *time.Time `binding:"required" json:"device_timestamp"`
 	Timestamp        *time.Time `binding:"required" json:"timestamp"`
@@ -759,10 +824,16 @@ type DeviceRecord struct {
 	Device           string     `binding:"required" json:"device"`
 }
 
+//nolint:funlen
 func (env *Env) Export(c *gin.Context) {
 	limit, err := strconv.Atoi(c.Param("limit"))
 
-	query := `SELECT devicetimestamp, timestamp, accuracy, geocoding, batterylevel, connectiontype, doze, st_y(st_astext(point)) AS latitude, st_x(st_astext(point)) AS longitude, speed, altitude, verticalaccuracy, "user", device
+	query := `SELECT
+    devicetimestamp, timestamp, accuracy, geocoding, batterylevel, connectiontype, doze, st_y(
+    st_astext(
+    point)) AS latitude, st_x(
+    st_astext(
+    point)) AS longitude, speed, altitude, verticalaccuracy, "user", device
 
 FROM locations
 ORDER by devicetimestamp ASC`
@@ -770,16 +841,20 @@ ORDER by devicetimestamp ASC`
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	rows, err := env.db.Query(query)
+	rows, err := env.database.Query(query)
 	if err != nil {
 		_ = c.Error(err)
 
 		return
 	}
 
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
+
+	if rows.Err() != nil {
+		_ = c.Error(rows.Err())
+
+		return
+	}
 
 	writer := c.Writer
 	header := writer.Header()
@@ -798,7 +873,7 @@ ORDER by devicetimestamp ASC`
 	)
 
 	for rows.Next() {
-		counter += 1
+		counter++
 
 		var deviceRecord DeviceRecord
 
@@ -819,11 +894,13 @@ ORDER by devicetimestamp ASC`
 			&deviceRecord.Device,
 		)
 		if err != nil {
-			slog.With("err", err).ErrorContext(c.Request.Context(), "Error scanning row")
+			slog.With("err", err).
+				ErrorContext(c.Request.Context(), "Error scanning row")
 		} else {
-			deviceRecordJson, err := json.Marshal(deviceRecord)
+			deviceRecordJSON, err := json.Marshal(deviceRecord)
 			if err != nil {
-				slog.With("err", err).ErrorContext(c.Request.Context(), "Error marshalling device record")
+				slog.With("err", err).
+					ErrorContext(c.Request.Context(), "Error marshalling device record")
 			} else {
 				if !first {
 					_, _ = gzipWriter.Write([]byte(","))
@@ -831,7 +908,7 @@ ORDER by devicetimestamp ASC`
 					first = false
 				}
 
-				_, _ = gzipWriter.Write(deviceRecordJson)
+				_, _ = gzipWriter.Write(deviceRecordJSON)
 			}
 		}
 

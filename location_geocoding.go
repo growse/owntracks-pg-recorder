@@ -16,57 +16,39 @@ import (
 	geojson "github.com/paulmach/go.geojson"
 )
 
-type OpencageReverseGeocodeResult struct {
-	Bounds struct {
-		Northeast struct {
-			Lat float64 `json:"lat"`
-			Lng float64 `json:"lng"`
-		} `json:"northeast"`
-		Southwest struct {
-			Lat float64 `json:"lat"`
-			Lng float64 `json:"lng"`
-		} `json:"southwest"`
-	} `binding:"required" json:"bounds"`
-	Components struct {
-		ISO31661Alpha2 string `json:"ISO_3166-1_alpha-2"`
-		ISO31661Alpha3 string `json:"ISO_3166-1_alpha-3"`
-		Category       string `json:"_category"`
-		Type           string `json:"_type"`
-		City           string `json:"city"`
-		CityDistrict   string `json:"city_district"`
-		Continent      string `json:"continent"`
-		Country        string `json:"country"`
-		CountryCode    string `json:"country_code"`
-		HouseNumber    string `json:"house_number"`
-		Neighbourhood  string `json:"neighbourhood"`
-		PoliticalUnion string `json:"political_union"`
-		Postcode       string `json:"postcode"`
-		Road           string `json:"road"`
-		State          string `json:"state"`
-		StateCode      string `json:"state_code"`
-		Suburb         string `json:"suburb"`
-	} `binding:"required" json:"components"`
-	Confidence int    `                   json:"confidence"`
-	Formatted  string `                   json:"formatted"`
-	Geometry   struct {
-		Lat float64 `json:"lat"`
-		Lng float64 `json:"lng"`
-	} `                   json:"geometry"`
-}
-type OpencageReverseGeocodeResponse struct {
-	PlusCode struct {
-		CompoundCode string `json:"compound_code"`
-		GlobalCode   string `json:"global_code"`
-	} `json:"plus_code"`
-	Results []OpencageReverseGeocodeResult `json:"results"   binding:"required"`
+// NominatimReverseGeocodeResult represents the response from Nominatim reverse geocoding API.
+//
+//nolint:tagliatelle
+type NominatimReverseGeocodeResult struct {
+	PlaceID     int    `json:"place_id"`
+	Licence     string `json:"licence"`
+	OsmType     string `json:"osm_type"`
+	OsmID       int64  `json:"osm_id"`
+	Lat         string `json:"lat"`
+	Lon         string `json:"lon"`
+	DisplayName string `json:"display_name"`
+	Address     struct {
+		HouseNumber  string `json:"house_number"`
+		Road         string `json:"road"`
+		Suburb       string `json:"suburb"`
+		Village      string `json:"village"`
+		Town         string `json:"town"`
+		City         string `json:"city"`
+		Municipality string `json:"municipality"`
+		County       string `json:"county"`
+		State        string `json:"state"`
+		Postcode     string `json:"postcode"`
+		Country      string `json:"country"`
+		CountryCode  string `json:"country_code"`
+	} `json:"address"`
+	BoundingBox []string `json:"boundingbox"`
 }
 
 // GeocodedName extracts a sane name from the geocoded name component.
-func (location *Location) GeocodedName() string {
-	ctx := context.Background()
+func (location *Location) GeocodedName(ctx context.Context) string {
 	unknownLocation := "Unknown"
 
-	var geoLocation []OpencageReverseGeocodeResult
+	var geoLocation NominatimReverseGeocodeResult
 
 	err := json.Unmarshal([]byte(location.Geocoding), &geoLocation)
 	if err != nil {
@@ -77,35 +59,57 @@ func (location *Location) GeocodedName() string {
 		return unknownLocation
 	}
 
-	if len(geoLocation) == 0 {
-		return unknownLocation
+	// Try to extract a meaningful location name
+	if geoLocation.Address.City != "" {
+		return geoLocation.Address.City
 	}
 
-	if geoLocation[0].Components.City != "" {
-		return geoLocation[0].Components.City
+	if geoLocation.Address.Town != "" {
+		return geoLocation.Address.Town
+	}
+
+	if geoLocation.Address.Village != "" {
+		return geoLocation.Address.Village
+	}
+
+	if geoLocation.Address.Municipality != "" {
+		return geoLocation.Address.Municipality
+	}
+
+	if geoLocation.Address.County != "" {
+		return geoLocation.Address.County
 	}
 
 	return unknownLocation
 }
 
-func (env *Env) GetGeocoding(place string) (*geojson.FeatureCollection, error) {
-	if env.configuration.GeocodeApiURL == "" {
+func (env *Env) GetGeocoding(
+	ctx context.Context,
+	place string,
+) (*geojson.FeatureCollection, error) {
+	if env.configuration.GeocodeAPIURL == "" {
 		err := errors.New("geocoding API should not be blank")
-		InternalError(err)
+		InternalError(ctx, err)
 
 		return nil, err
 	}
 
 	if place == "" {
 		err := errors.New("place should not be blank")
-		InternalError(err)
+		InternalError(ctx, err)
 
 		return nil, err
 	}
 
-	geocodingUrl := fmt.Sprintf(env.configuration.GeocodeApiURL, url.QueryEscape(place))
+	// Build Nominatim search URL
+	// Format: https://nominatim.example.com/search?q=PLACE&format=geojson
+	geocodingURL := fmt.Sprintf(
+		"%s/search?q=%s&format=geojson&addressdetails=1",
+		env.configuration.GeocodeAPIURL,
+		url.QueryEscape(place),
+	)
 
-	geocodingResponse, err := fetchGeocodingResponse(geocodingUrl)
+	geocodingResponse, err := fetchGeocodingResponse(ctx, geocodingURL)
 	if err != nil {
 		return nil, err
 	}
@@ -119,11 +123,10 @@ func (env *Env) GetGeocoding(place string) (*geojson.FeatureCollection, error) {
 }
 
 func RoundCoordinate(input float64) float64 {
-	ctx := context.Background()
-
 	rounded, err := strconv.ParseFloat(fmt.Sprintf("%.5f", input), 64)
 	if err != nil {
-		slog.With("input", input).ErrorContext(ctx, "Unable to truncate float to precision")
+		slog.With("input", input).
+			Error("Unable to truncate float to precision")
 		panic(err)
 	}
 
@@ -132,10 +135,10 @@ func RoundCoordinate(input float64) float64 {
 
 var reverseGeocodeCache = cache.New(cache.NoExpiration, 0)
 
-func (location *Location) GetReverseGeocoding(env *Env) (string, error) {
-	if env.configuration.ReverseGeocodeApiURL == "" {
+func (location *Location) GetReverseGeocoding(ctx context.Context, env *Env) (string, error) {
+	if env.configuration.ReverseGeocodeAPIURL == "" {
 		err := errors.New("reverse Geocoding API should not be blank")
-		InternalError(err)
+		InternalError(ctx, err)
 
 		return "", err
 	}
@@ -149,61 +152,71 @@ func (location *Location) GetReverseGeocoding(env *Env) (string, error) {
 	if value, present := reverseGeocodeCache.Get(cacheKey); present {
 		if stringValue, ok := value.(string); ok {
 			slog.With("cacheKey", cacheKey).
-				DebugContext(context.Background(), "Found cached reverse geocode")
+				DebugContext(ctx, "Found cached reverse geocode")
 
 			return stringValue, nil
-		} else {
-			slog.With("value", value).WarnContext(context.Background(), "Cache value wasn't a string")
-			reverseGeocodeCache.Delete(cacheKey)
 		}
+
+		slog.With("value", value).
+			WarnContext(ctx, "Cache value wasn't a string")
+		reverseGeocodeCache.Delete(cacheKey)
 	}
 
-	geocodingUrl := fmt.Sprintf(
-		env.configuration.ReverseGeocodeApiURL,
+	// Build Nominatim reverse geocode URL
+	// Format: https://nominatim.example.com/reverse?lat=LAT&lon=LON&format=json
+	geocodingURL := fmt.Sprintf(
+		"%s/reverse?lat=%f&lon=%f&format=json&addressdetails=1",
+		env.configuration.ReverseGeocodeAPIURL,
 		location.Latitude,
 		location.Longitude,
 	)
 
-	geocodingResponse, err := fetchGeocodingResponse(geocodingUrl)
+	geocodingResponse, err := fetchGeocodingResponse(ctx, geocodingURL)
 	slog.With("response", geocodingResponse).
-		DebugContext(context.Background(), "Geocoding Response")
+		DebugContext(ctx, "Geocoding Response")
 
 	if err != nil {
 		return "", err
 	}
 
-	var response OpencageReverseGeocodeResponse
+	var response NominatimReverseGeocodeResult
 
 	err = json.Unmarshal([]byte(geocodingResponse), &response)
 	if err != nil {
 		return "", err
 	}
 
-	geocodingJson, err := json.Marshal(response.Results)
+	// Store the entire response as JSON
+	geocodingJSON, err := json.Marshal(response)
 	if err != nil {
 		return "", err
 	}
 
-	reverseGeocodeCache.Set(cacheKey, string(geocodingJson), 0)
+	reverseGeocodeCache.Set(cacheKey, string(geocodingJSON), 0)
 
-	return string(geocodingJson), nil
+	return string(geocodingJSON), nil
 }
 
-func fetchGeocodingResponse(geocodingUrl string) (string, error) {
-	defer timeTrack(time.Now())
+func fetchGeocodingResponse(ctx context.Context, geocodingURL string) (string, error) {
+	defer timeTrack(ctx, time.Now())
 
-	response, err := http.Get(geocodingUrl)
+	//nolint: gosec
+	response, err := http.Get(geocodingURL)
+
+	defer func(r *http.Response) {
+		if r == nil {
+			return
+		}
+
+		_ = r.Body.Close()
+	}(response)
 
 	if err != nil || response == nil {
 		slog.With("err", err).
-			ErrorContext(context.Background(), "Error getting geolocation from API")
+			ErrorContext(ctx, "Error getting geolocation from API")
 
 		return "", err
 	}
-
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(response.Body)
 
 	body, err := io.ReadAll(response.Body)
 	if response.StatusCode != http.StatusOK {
@@ -212,13 +225,13 @@ func fetchGeocodingResponse(geocodingUrl string) (string, error) {
 		}
 
 		err := fmt.Errorf("invalid response from Geolocation API: %v %v", response.StatusCode, body)
-		InternalError(err)
+		InternalError(ctx, err)
 
 		return "", err
 	}
 
 	if err != nil {
-		InternalError(err)
+		InternalError(ctx, err)
 
 		return "", err
 	}
@@ -226,67 +239,80 @@ func fetchGeocodingResponse(geocodingUrl string) (string, error) {
 	return string(body), nil
 }
 
-func (env *Env) UpdateLocationWithGeocoding(queue <-chan int) {
-	ctx := context.Background()
+func (env *Env) UpdateLocationWithGeocoding(ctx context.Context, queue <-chan int) {
 	slog.InfoContext(ctx, "Starting geocoding goroutine")
 
 	for {
-		id, more := <-queue
+		locationID, more := <-queue
 		if more {
-			slog.With("id", id).InfoContext(ctx, "Updating geocoding for entry")
+			slog.With("locationID", locationID).
+				InfoContext(ctx, "Updating geocoding for entry")
 
 			location := Location{Type: "location"}
 
-			err := env.db.QueryRow("select ST_Y(ST_AsText(point)),ST_X(ST_AsText(point)) from locations where id=$1", id).
+			err := env.database.QueryRow(`select ST_Y(ST_AsText(point)), ST_X(ST_AsText(point))
+from locations
+where id = $1`, locationID).
 				Scan(&location.Latitude, &location.Longitude)
 			if err != nil {
 				slog.With("err", err).
-					With("id", id).
+					With("locationID", locationID).
 					ErrorContext(ctx, "Error fetching location from database")
 			}
 
-			env.geocodeAndUpdateDatabase(location, id)
+			env.geocodeAndUpdateDatabase(ctx, location, locationID)
 		} else {
-			slog.InfoContext(ctx, "Got signal, quitting geocoding goroutine.")
+			slog.InfoContext(
+				ctx,
+				"Got signal, quitting geocoding goroutine.",
+			)
 
 			return
 		}
 	}
 }
 
-func (env *Env) geocodeAndUpdateDatabase(location Location, id int) {
-	ctx := context.Background()
-
-	geocodingJson, err := location.GetReverseGeocoding(env)
+func (env *Env) geocodeAndUpdateDatabase(ctx context.Context, location Location, id int) {
+	geocodingJSON, err := location.GetReverseGeocoding(ctx, env)
 	if err != nil {
-		slog.With("err", err).ErrorContext(ctx, "Could not reverse geocode")
+		slog.With("err", err).
+			ErrorContext(ctx, "Could not reverse geocode")
 
 		return
+	}
+
+	_, err = env.database.Exec("update locations set geocoding=$1 where id=$2", geocodingJSON, id)
+	if err != nil {
+		slog.With("err", err).
+			With("geocoding", geocodingJSON).
+			ErrorContext(ctx, "could not update database with geocode")
 	} else {
-		_, err = env.db.Exec("update locations set geocoding=$1 where id=$2", geocodingJson, id)
-		if err != nil {
-			slog.With("err", err).With("geocoding", geocodingJson).ErrorContext(ctx, "could not update database with geocode")
-		} else {
-			slog.With("id", id).InfoContext(ctx, "Geocoded location id")
-		}
+		slog.With("id", id).
+			InfoContext(ctx, "Geocoded location id")
 	}
 }
 
-func (env *Env) GeocodingCrawler(quitChan <-chan bool) {
-	ctx := context.Background()
+const geocodingCrawlerInterval = 10 * time.Second
+
+func (env *Env) GeocodingCrawler(ctx context.Context) {
 	slog.InfoContext(ctx, "Starting geocoding backlog crawler")
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(geocodingCrawlerInterval)
 
 	for {
 		select {
 		case <-ticker.C:
 			location := Location{Type: "location"}
 
-			var id int
+			var locationID int
 
-			err := env.db.QueryRow("select id,ST_Y(ST_AsText(point)),ST_X(ST_AsText(point)) from locations where geocoding is null and devicetimestamp<CURRENT_DATE - 1 order by devicetimestamp desc limit 1").
-				Scan(&id, &location.Latitude, &location.Longitude)
+			err := env.database.QueryRow(`select id, ST_Y(ST_AsText(point)), ST_X(ST_AsText(point))
+from locations
+where geocoding is null
+  and devicetimestamp < CURRENT_DATE - 1
+order by devicetimestamp desc
+limit 1`).
+				Scan(&locationID, &location.Latitude, &location.Longitude)
 			if err != nil {
 				slog.With("err", err).
 					ErrorContext(ctx, "Error fetching latest location without geocode")
@@ -294,8 +320,8 @@ func (env *Env) GeocodingCrawler(quitChan <-chan bool) {
 				break
 			}
 
-			env.geocodeAndUpdateDatabase(location, id)
-		case <-quitChan:
+			env.geocodeAndUpdateDatabase(ctx, location, locationID)
+		case <-ctx.Done():
 			slog.InfoContext(ctx, "Closing geocoding crawler")
 
 			return

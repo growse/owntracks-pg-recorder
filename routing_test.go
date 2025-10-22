@@ -7,6 +7,7 @@ import (
 )
 
 func TestGinRoute(t *testing.T) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.Default()
 	env := Env{}

@@ -15,10 +15,13 @@ import (
 	"github.com/lib/pq"
 )
 
+const mqttDisconnectTimeoutMs = 250
+
+//nolint:tagliatelle,tagalign
 type MQTTMsg struct {
-	MessageId            *string            `json:"_id"`
+	MessageID            *string            `json:"_id"`
 	Type                 string             `json:"_type" binding:"required"`
-	TrackerId            string             `json:"tid"`
+	TrackerID            string             `json:"tid"`
 	Accuracy             float32            `json:"acc"`
 	VerticalAccuracy     float32            `json:"vac"`
 	Battery              int                `json:"batt"`
@@ -46,8 +49,7 @@ func (s slogMQTTAdapter) Printf(format string, v ...interface{}) {
 	slog.ErrorContext(context.Background(), fmt.Sprintf(format, v...))
 }
 
-func (env *Env) SubscribeMQTT(quit <-chan bool) error {
-	ctx := context.Background()
+func (env *Env) SubscribeMQTT(ctx context.Context) error {
 	slog.InfoContext(ctx, "Connecting to MQTT")
 
 	mqtt.ERROR = slogMQTTAdapter{}
@@ -72,49 +74,58 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	mqttClientOptions.ResumeSubs = true
 	mqttClientOptions.ProtocolVersion = 4
 	mqttClientOptions.SetAutoReconnect(true)
-	mqttClientOptions.ClientID = env.configuration.MQTTClientId
+	mqttClientOptions.ClientID = env.configuration.MQTTClientID
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)
 	mqttClientOptions.SetReconnectingHandler(reconnectingHandler)
 	mqttClientOptions.AutoAckDisabled = true
 
 	mqttClientOptions.SetOnConnectHandler(func(client mqtt.Client) {
-		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.mqttMessageHandler)
+		err := subscribeToMQTT(ctx, client, env.configuration.MQTTTopic, env.mqttMessageHandler)
 		if err != nil {
 			slog.With("topic", env.configuration.MQTTTopic).
 				With("err", err).
-				ErrorContext(context.Background(), "Unable to subscribe to MQTT topic")
+				ErrorContext(ctx, "Unable to subscribe to MQTT topic")
 		}
 	})
 
 	mqttClient := mqtt.NewClient(mqttClientOptions)
 
 	mqttClientToken := mqttClient.Connect()
-	defer mqttClient.Disconnect(250)
+	defer mqttClient.Disconnect(mqttDisconnectTimeoutMs)
 
 	if mqttClientToken.Wait() && mqttClientToken.Error() != nil {
-		slog.With("err", mqttClientToken.Error()).ErrorContext(ctx, "Error connecting to mqtt")
+		slog.With("err", mqttClientToken.Error()).
+			ErrorContext(ctx, "Error connecting to mqtt")
 
 		return mqttClientToken.Error()
 	}
 
 	slog.InfoContext(ctx, "MQTT Connected")
 
-	<-quit
-	mqttClient.Disconnect(100)
+	<-ctx.Done()
+
+	mqttClient.Disconnect(mqttDisconnectTimeoutMs)
 	slog.InfoContext(ctx, "Closing MQTT")
 
 	return nil
 }
 
-func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageHandler) error {
-	ctx := context.Background()
+func subscribeToMQTT(
+	ctx context.Context,
+	mqttClient mqtt.Client,
+	topic string,
+	handler mqtt.MessageHandler,
+) error {
 	qos := byte(1)
-	slog.With("topic", topic).With("qos", qos).InfoContext(ctx, "MQTT Subscribing")
+	slog.With("topic", topic).
+		With("qos", qos).
+		InfoContext(ctx, "MQTT Subscribing")
 
 	mqttSubscribeToken := mqttClient.Subscribe(topic, qos, handler)
 	if mqttSubscribeToken.Wait() && mqttSubscribeToken.Error() != nil {
-		slog.With("err", mqttSubscribeToken.Error()).ErrorContext(ctx, "Error connecting to mqtt")
-		mqttClient.Disconnect(250)
+		slog.With("err", mqttSubscribeToken.Error()).
+			ErrorContext(ctx, "Error connecting to mqtt")
+		mqttClient.Disconnect(mqttDisconnectTimeoutMs)
 
 		return mqttSubscribeToken.Error()
 	}
@@ -124,11 +135,12 @@ func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageH
 	return nil
 }
 
-var connectionLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
-	slog.With("err", err).ErrorContext(context.Background(), "MQTT Connection lost")
+var connectionLostHandler mqtt.ConnectionLostHandler = func(_ mqtt.Client, err error) {
+	slog.With("err", err).
+		ErrorContext(context.Background(), "MQTT Connection lost")
 }
 
-var reconnectingHandler mqtt.ReconnectHandler = func(client mqtt.Client, options *mqtt.ClientOptions) {
+var reconnectingHandler mqtt.ReconnectHandler = func(_ mqtt.Client, _ *mqtt.ClientOptions) {
 	slog.InfoContext(context.Background(), "MQTT Reconnecting")
 }
 
@@ -142,6 +154,7 @@ func filterUsersContainsUser(filterUsers string, user string) bool {
 	return false
 }
 
+//nolint:funlen
 func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 	ctx := context.Background()
 	slog.With("topic", msg.Topic()).
@@ -190,19 +203,19 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 	}
 
 	slog.With("timestamp", locationMessage.DeviceTimestamp.String()).
-		With("messageId", locationMessage.MessageId).
+		With("messageId", locationMessage.MessageID).
 		InfoContext(ctx, "Inserting into database")
 
 	backoffPolicy := backoff.NewExponentialBackOff()
 	backoffPolicy.MaxElapsedTime = 1 * time.Minute
 	insertFunc := func() error {
-		return insertToDatabase(
+		return insertToDatabase(ctx,
 			env.configuration.GeocodeOnInsert,
 			env.configuration.EnablePrometheus,
 			env.metrics,
 			locationMessage,
 			msg,
-			env.db,
+			env.database,
 		)
 	}
 
@@ -210,31 +223,31 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 	if err != nil {
 		slog.With("err", err).
 			With("timestamp", locationMessage.DeviceTimestamp.String()).
-			With("messageId", locationMessage.MessageId).
+			With("messageId", locationMessage.MessageID).
 			ErrorContext(ctx, "unable to insert location message to database")
 	}
 }
 
+//nolint:funlen
 func insertToDatabase(
+	ctx context.Context,
 	geoCodeOnInsert bool,
 	enablePrometheus bool,
 	metrics *Metrics,
 	locationMessage MQTTMsg,
 	msg mqtt.Message,
-	db *sql.DB,
+	database *sql.DB,
 ) error {
-	ctx := context.Background()
-
 	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
 
-	defer timeTrack(time.Now())
+	defer timeTrack(ctx, time.Now())
 	defer cancelFn()
 
 	dozeBoolean := bool(locationMessage.Doze)
 
-	var lastInsertId int
+	var lastInsertID int
 
-	err := db.QueryRowContext(
+	err := database.QueryRowContext(
 		ctx,
 		`insert into locations
 (timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
@@ -256,12 +269,12 @@ RETURNING id`,
 		locationMessage.User,
 		locationMessage.Device,
 		locationMessage.Course,
-	).Scan(&lastInsertId)
+	).Scan(&lastInsertID)
 
 	if ctx.Err() != nil { // We may have timed out
 		slog.With("err", ctx.Err()).
 			With("timestamp", locationMessage.DeviceTimestamp.String()).
-			With("messageId", locationMessage.MessageId).
+			With("messageId", locationMessage.MessageID).
 			ErrorContext(ctx, "Context error")
 
 		return ctx.Err()
@@ -277,23 +290,29 @@ RETURNING id`,
 				msg.Ack()
 
 				return nil
-			} else {
-				slog.With("err", dbErr).With("errorCode", dbErr.Code).With("errorName", dbErr.Code.Name()).ErrorContext(ctx, "Unable to write location to database")
-
-				return err
 			}
-		}
-	} else {
-		msg.Ack()
-		slog.With("id", lastInsertId).With("messageId", locationMessage.MessageId).DebugContext(ctx, "Inserted database location")
 
-		if enablePrometheus {
-			metrics.locationsReceived.Inc()
-		}
+			slog.
+				With("err", dbErr).
+				With("errorCode", dbErr.Code).
+				With("errorName", dbErr.Code.Name()).
+				ErrorContext(ctx, "Unable to write location to database")
 
-		if geoCodeOnInsert {
-			GeocodingWorkQueue <- lastInsertId
+			return err
 		}
+	}
+
+	msg.Ack()
+	slog.With("id", lastInsertID).
+		With("messageId", locationMessage.MessageID).
+		DebugContext(ctx, "Inserted database location")
+
+	if enablePrometheus {
+		metrics.locationsReceived.Inc()
+	}
+
+	if geoCodeOnInsert {
+		GeocodingWorkQueue <- lastInsertID
 	}
 
 	return nil

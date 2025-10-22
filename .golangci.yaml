@@ -3,12 +3,23 @@ version: "2"
 linters:
   default: all
   disable:
+    - depguard
+    - mnd
+    - paralleltest
+    - varnamelen
     - wsl
     - wrapcheck
-      
+    - noctx
+    - revive
+    - exhaustruct
+    - forcetypeassert
+    - err113
+    - musttag
+    - nestif
+    - gochecknoglobals
+
 formatters:
   enable:
     - gci
     - gofmt
     - golines
-

@@ -11,7 +11,7 @@ type Metrics struct {
 
 func NewMetrics() *Metrics {
 	return &Metrics{locationsReceived: promauto.NewCounter(prometheus.CounterOpts{
-		Name: "location_messages_received",
+		Name: "location_messages_received_total",
 		Help: "Number of location messages received by the recorder",
 	}),
 	}

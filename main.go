@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,84 +20,89 @@ var (
 	GeocodingWorkQueue chan int
 )
 
-func InternalError(err error) {
-	slog.With("err", err).ErrorContext(context.Background(), "Internal Error")
+func InternalError(ctx context.Context, err error) {
+	slog.With("err", err).ErrorContext(ctx, "Internal Error")
 }
 
 type Env struct {
-	db            *sql.DB
+	database      *sql.DB
 	configuration *Configuration
 	metrics       *Metrics
 }
 
 func main() {
 	ctx := context.Background()
-	// Catch SIGINT & SIGTERM to stop the profiling
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	quit := make(chan bool, 1)
+	err := run(ctx, os.Args)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			slog.InfoContext(ctx, "Shutting down due to context cancellation")
 
-	go func() {
-		for sig := range c {
-			slog.With("signal", sig).InfoContext(ctx, "captured signal. Exiting...")
-
-			if quit != nil {
-				close(quit)
-			}
-
-			if GeocodingWorkQueue != nil {
-				close(GeocodingWorkQueue)
-			}
-
-			slog.InfoContext(ctx, "Closing manners")
-			manners.Close()
+			return
 		}
 
-		slog.InfoContext(ctx, "Quitting signal listener goroutine.")
-	}()
+		slog.With("err", err).ErrorContext(ctx, "Fatal error running application")
+		os.Exit(1)
+	}
+}
+
+var errInvalidConfig = errors.New("invalid configuration")
+
+//nolint:funlen
+func run(ctx context.Context, _ []string) error {
+	ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancelFunc()
 
 	// Database time
 	configuration, err := getConfiguration()
 	if err != nil {
 		slog.With("err", err).ErrorContext(ctx, "Unable to parse config")
-		os.Exit(1)
+
+		return errInvalidConfig
 	}
 
-	env := &Env{db: nil, configuration: configuration, metrics: NewMetrics()}
+	env := &Env{database: nil, configuration: configuration, metrics: NewMetrics()}
 
 	if env.configuration.Debug {
 		slog.SetDefault(
-			slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+			slog.New(slog.NewTextHandler(
+				os.Stdout,
+				&slog.HandlerOptions{Level: slog.LevelDebug},
+			)),
 		)
-		slog.With("config", env.configuration).DebugContext(ctx, "Setting debug logger.level")
+		slog.With("config", env.configuration).
+			DebugContext(ctx, "Setting debug logger.level")
 	} else {
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+		slog.SetDefault(slog.New(slog.NewTextHandler(
+			os.Stdout,
+			&slog.HandlerOptions{Level: slog.LevelInfo},
+		)))
 	}
 
 	if env.configuration.DbHost != "" {
-		env.setupDatabase()
+		env.setupDatabase(ctx)
 
-		GeocodingWorkQueue = make(chan int, 100)
-		go env.UpdateLocationWithGeocoding(GeocodingWorkQueue)
+		GeocodingWorkQueue = make(chan int)
+		go env.UpdateLocationWithGeocoding(ctx, GeocodingWorkQueue)
 
 		if env.configuration.EnableGeocodingCrawler {
-			go env.GeocodingCrawler(quit)
+			go env.GeocodingCrawler(ctx)
 		}
 
-		env.DoDatabaseMigrations()
+		env.DoDatabaseMigrations(ctx)
 
 		go func() {
-			err := env.SubscribeMQTT(quit)
+			err := env.SubscribeMQTT(ctx)
 			if err != nil {
 				slog.With("err", err).ErrorContext(ctx, "Can't connect to MQTT")
 			}
 		}()
 	} else {
 		slog.ErrorContext(ctx, "No database host specified, disabling")
-		os.Exit(1)
+
+		return errInvalidConfig
 	}
-	defer env.closeDatabase()
+	defer env.closeDatabase(ctx)
 
 	// Get the router
 	if env.configuration.Debug {
@@ -107,22 +113,23 @@ func main() {
 
 	router := gin.Default()
 	env.BuildRoutes(configuration, router)
-	slog.With("httpPort", env.configuration.Port).InfoContext(ctx, "Listening on HTTP")
+	slog.With("httpPort", env.configuration.Port).
+		InfoContext(ctx, "Listening on HTTP")
 
 	err = manners.ListenAndServe(fmt.Sprintf(":%d", env.configuration.Port), router)
 	if err != nil {
 		slog.With("err", err).ErrorContext(ctx, "Error starting server")
 	}
+
+	return nil
 }
 
-func (env *Env) closeDatabase() {
-	ctx := context.Background()
-
+func (env *Env) closeDatabase(ctx context.Context) {
 	func() {
 		slog.InfoContext(ctx, "Closing database")
 
-		if env.db != nil {
-			err := env.db.Close()
+		if env.database != nil {
+			err := env.database.Close()
 			if err != nil {
 				slog.With("err", err).ErrorContext(ctx, "Error closing database")
 			}
@@ -130,8 +137,7 @@ func (env *Env) closeDatabase() {
 	}()
 }
 
-func (env *Env) setupDatabase() {
-	ctx := context.Background()
+func (env *Env) setupDatabase(ctx context.Context) {
 	connectionString := fmt.Sprintf(
 		"host=%s user=%s dbname=%s sslmode=%s password=%s",
 		env.configuration.DbHost,
@@ -141,20 +147,20 @@ func (env *Env) setupDatabase() {
 		env.configuration.DbPassword,
 	)
 
-	db, err := sql.Open("postgres", connectionString)
+	database, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		slog.With("err", err).ErrorContext(ctx, "Error connecting to database")
 	}
 
-	err = db.Ping()
+	err = database.Ping()
 	if err != nil {
 		slog.With("err", err).ErrorContext(ctx, "Error connecting to database")
 	} else {
 		slog.InfoContext(ctx, "Database connected")
 	}
 
-	db.SetMaxOpenConns(env.configuration.MaxDBOpenConnections)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(time.Hour)
-	env.db = db
+	database.SetMaxOpenConns(env.configuration.MaxDBOpenConnections)
+	database.SetMaxIdleConns(1)
+	database.SetConnMaxLifetime(time.Hour)
+	env.database = database
 }

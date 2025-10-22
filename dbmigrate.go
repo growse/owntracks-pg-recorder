@@ -1,38 +1,47 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
+	"log/slog"
+
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	log "github.com/sirupsen/logrus"
 )
 
 //go:embed databasemigrations/*.sql
 var migrationsFs embed.FS
 
 func (env *Env) DoDatabaseMigrations() {
-	log.Info("Starting Database Migrations")
-	driver, err := postgres.WithInstance(env.db, &postgres.Config{MigrationsTable: "migrations"})
+	ctx := context.Background()
+	slog.InfoContext(ctx, "Starting Database Migrations")
 
+	driver, err := postgres.WithInstance(env.db, &postgres.Config{MigrationsTable: "migrations"})
 	if err != nil {
-		log.WithError(err).Fatal("Errors encountered creating migration driver")
+		slog.With("err", err).ErrorContext(ctx, "Errors encountered creating migration driver")
+		panic(err)
 	}
 
 	sourceDriver, err := iofs.New(migrationsFs, "databasemigrations")
 	if err != nil {
-		log.WithError(err).Fatal("Could not create migrations source driver")
+		slog.With("err", err).ErrorContext(ctx, "Could not create migrations source driver")
+		panic(err)
 	}
-	m, err := migrate.NewWithInstance("iofs", sourceDriver, env.configuration.DbName, driver)
 
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, env.configuration.DbName, driver)
 	if err != nil {
-		log.WithError(err).Fatal("Errors encountered creating migrate instance")
+		slog.With("err", err).ErrorContext(ctx, "Errors encountered creating migrate instance")
+		panic(err)
 	}
+
 	err = m.Up()
 
-	if err != nil && err != migrate.ErrNoChange {
-		log.WithError(err).Fatal("Errors encountered migrating database")
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		slog.With("err", err).ErrorContext(ctx, "Errors encountered migrating database")
+		panic(err)
 	}
 
-	log.Info("Database migration done")
+	slog.InfoContext(ctx, "Database migration done")
 }

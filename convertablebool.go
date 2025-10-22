@@ -16,5 +16,6 @@ func (bit *ConvertibleBoolean) UnmarshalJSON(data []byte) error {
 	default:
 		return fmt.Errorf("boolean unmarshal error: invalid input %s", asString)
 	}
+
 	return nil
 }

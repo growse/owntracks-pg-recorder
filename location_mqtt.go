@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/lib/pq"
-	log "github.com/sirupsen/logrus"
 )
 
 type MQTTMsg struct {
@@ -28,15 +29,28 @@ type MQTTMsg struct {
 	Speed                float32            `json:"vel"`
 	Altitude             float32            `json:"alt"`
 	Course               int                `json:"cog"`
-	DeviceTimestampAsInt int64              `json:"tst" binding:"required"`
+	DeviceTimestampAsInt int64              `json:"tst"   binding:"required"`
 	DeviceTimestamp      time.Time
 	User                 string
 	Device               string
 }
 
+// slogMQTTAdapter adapts slog to mqtt.Logger interface.
+type slogMQTTAdapter struct{}
+
+func (s slogMQTTAdapter) Println(v ...interface{}) {
+	slog.ErrorContext(context.Background(), fmt.Sprint(v...))
+}
+
+func (s slogMQTTAdapter) Printf(format string, v ...interface{}) {
+	slog.ErrorContext(context.Background(), fmt.Sprintf(format, v...))
+}
+
 func (env *Env) SubscribeMQTT(quit <-chan bool) error {
-	log.Info("Connecting to MQTT")
-	mqtt.ERROR = log.StandardLogger()
+	ctx := context.Background()
+	slog.InfoContext(ctx, "Connecting to MQTT")
+
+	mqtt.ERROR = slogMQTTAdapter{}
 
 	var mqttClientOptions = mqtt.NewClientOptions()
 	if env.configuration.MQTTURL != "" {
@@ -44,13 +58,16 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	} else {
 		mqttClientOptions.AddBroker("tcp://localhost:1883")
 	}
+
 	if env.configuration.MQTTUsername != "" && env.configuration.MQTTPassword != "" {
-		log.WithField("mqttUsername", env.configuration.MQTTUsername).Info("Authenticating to MQTT")
+		slog.With("mqttUsername", env.configuration.MQTTUsername).
+			InfoContext(ctx, "Authenticating to MQTT")
 		mqttClientOptions.SetUsername(env.configuration.MQTTUsername)
 		mqttClientOptions.SetPassword(env.configuration.MQTTPassword)
 	} else {
-		log.Info("Anon MQTT auth")
+		slog.InfoContext(ctx, "Anon MQTT auth")
 	}
+
 	mqttClientOptions.CleanSession = false
 	mqttClientOptions.ResumeSubs = true
 	mqttClientOptions.ProtocolVersion = 4
@@ -63,45 +80,56 @@ func (env *Env) SubscribeMQTT(quit <-chan bool) error {
 	mqttClientOptions.SetOnConnectHandler(func(client mqtt.Client) {
 		err := subscribeToMQTT(client, env.configuration.MQTTTopic, env.mqttMessageHandler)
 		if err != nil {
-			log.WithField("topic", env.configuration.MQTTTopic).WithError(err).Error("Unable to subscribe to MQTT topic")
+			slog.With("topic", env.configuration.MQTTTopic).
+				With("err", err).
+				ErrorContext(context.Background(), "Unable to subscribe to MQTT topic")
 		}
 	})
+
 	mqttClient := mqtt.NewClient(mqttClientOptions)
 
 	mqttClientToken := mqttClient.Connect()
 	defer mqttClient.Disconnect(250)
 
 	if mqttClientToken.Wait() && mqttClientToken.Error() != nil {
-		log.WithError(mqttClientToken.Error()).Error("Error connecting to mqtt")
+		slog.With("err", mqttClientToken.Error()).ErrorContext(ctx, "Error connecting to mqtt")
+
 		return mqttClientToken.Error()
 	}
-	log.Info("MQTT Connected")
+
+	slog.InfoContext(ctx, "MQTT Connected")
 
 	<-quit
 	mqttClient.Disconnect(100)
-	log.Info("Closing MQTT")
+	slog.InfoContext(ctx, "Closing MQTT")
+
 	return nil
 }
 
 func subscribeToMQTT(mqttClient mqtt.Client, topic string, handler mqtt.MessageHandler) error {
+	ctx := context.Background()
 	qos := byte(1)
-	log.WithField("topic", topic).WithField("qos", qos).Info("MQTT Subscribing")
+	slog.With("topic", topic).With("qos", qos).InfoContext(ctx, "MQTT Subscribing")
+
 	mqttSubscribeToken := mqttClient.Subscribe(topic, qos, handler)
 	if mqttSubscribeToken.Wait() && mqttSubscribeToken.Error() != nil {
-		log.WithError(mqttSubscribeToken.Error()).Error("Error connecting to mqtt")
+		slog.With("err", mqttSubscribeToken.Error()).ErrorContext(ctx, "Error connecting to mqtt")
 		mqttClient.Disconnect(250)
+
 		return mqttSubscribeToken.Error()
 	}
-	log.WithField("topic", topic).Info("MQTT Subscribed")
+
+	slog.With("topic", topic).InfoContext(ctx, "MQTT Subscribed")
+
 	return nil
 }
 
 var connectionLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
-	log.WithError(err).Error("MQTT Connection lost")
+	slog.With("err", err).ErrorContext(context.Background(), "MQTT Connection lost")
 }
 
 var reconnectingHandler mqtt.ReconnectHandler = func(client mqtt.Client, options *mqtt.ClientOptions) {
-	log.Info("MQTT Reconnecting")
+	slog.InfoContext(context.Background(), "MQTT Reconnecting")
 }
 
 func filterUsersContainsUser(filterUsers string, user string) bool {
@@ -110,25 +138,35 @@ func filterUsersContainsUser(filterUsers string, user string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
 func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
-	log.WithField("topic", msg.Topic()).
-		WithField("qos", msg.Qos()).
-		WithField("retained", msg.Retained()).
-		Info("Received mqtt message")
-	var locationMessage MQTTMsg
-	err := json.Unmarshal(msg.Payload(), &locationMessage)
+	ctx := context.Background()
+	slog.With("topic", msg.Topic()).
+		With("qos", msg.Qos()).
+		With("retained", msg.Retained()).
+		InfoContext(ctx, "Received mqtt message")
 
+	var locationMessage MQTTMsg
+
+	err := json.Unmarshal(msg.Payload(), &locationMessage)
 	if err != nil {
-		log.WithError(err).WithField("payload", msg.Payload()).Error("Error decoding MQTT message")
+		slog.With("err", err).
+			With("payload", msg.Payload()).
+			ErrorContext(ctx, "Error decoding MQTT message")
 		msg.Ack()
+
 		return
 	}
+
 	if locationMessage.Type != "location" {
-		log.WithField("msgType", locationMessage.Type).WithField("topic", msg.Topic()).Info("Skipping received message")
+		slog.With("msgType", locationMessage.Type).
+			With("topic", msg.Topic()).
+			InfoContext(ctx, "Skipping received message")
 		msg.Ack()
+
 		return
 	}
 
@@ -141,70 +179,122 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 		locationMessage.Device = topicParts[len(topicParts)-1]
 		locationMessage.User = topicParts[len(topicParts)-2]
 	}
-	if env.configuration.FilterUsers != "" && !filterUsersContainsUser(env.configuration.FilterUsers, locationMessage.User) {
-		log.WithField("user", locationMessage.User).Info("Message from user not in filterUsers list. Skipping")
+
+	if env.configuration.FilterUsers != "" &&
+		!filterUsersContainsUser(env.configuration.FilterUsers, locationMessage.User) {
+		slog.With("user", locationMessage.User).
+			InfoContext(ctx, "Message from user not in filterUsers list. Skipping")
 		msg.Ack()
+
 		return
 	}
-	log.WithField("timestamp", locationMessage.DeviceTimestamp.String()).WithField("messageId", locationMessage.MessageId).Info("Inserting into database")
-	b := backoff.NewExponentialBackOff()
-	b.MaxElapsedTime = 1 * time.Minute
+
+	slog.With("timestamp", locationMessage.DeviceTimestamp.String()).
+		With("messageId", locationMessage.MessageId).
+		InfoContext(ctx, "Inserting into database")
+
+	backoffPolicy := backoff.NewExponentialBackOff()
+	backoffPolicy.MaxElapsedTime = 1 * time.Minute
 	insertFunc := func() error {
-		return insertToDatabase(env.configuration.GeocodeOnInsert, env.configuration.EnablePrometheus, env.metrics, locationMessage, msg, env.db)
+		return insertToDatabase(
+			env.configuration.GeocodeOnInsert,
+			env.configuration.EnablePrometheus,
+			env.metrics,
+			locationMessage,
+			msg,
+			env.db,
+		)
 	}
-	err = backoff.Retry(insertFunc, b)
+
+	err = backoff.Retry(insertFunc, backoffPolicy)
 	if err != nil {
-		log.WithError(err).
-			WithField("timestamp", locationMessage.DeviceTimestamp.String()).
-			WithField("messageId", locationMessage.MessageId).
-			Error("unable to insert location message to database")
+		slog.With("err", err).
+			With("timestamp", locationMessage.DeviceTimestamp.String()).
+			With("messageId", locationMessage.MessageId).
+			ErrorContext(ctx, "unable to insert location message to database")
 	}
 }
 
-func insertToDatabase(geoCodeOnInsert bool, enablePrometheus bool, metrics *Metrics, locationMessage MQTTMsg, msg mqtt.Message, db *sql.DB) error {
+func insertToDatabase(
+	geoCodeOnInsert bool,
+	enablePrometheus bool,
+	metrics *Metrics,
+	locationMessage MQTTMsg,
+	msg mqtt.Message,
+	db *sql.DB,
+) error {
 	ctx := context.Background()
+
 	ctx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
+
 	defer timeTrack(time.Now())
 	defer cancelFn()
+
 	dozeBoolean := bool(locationMessage.Doze)
+
 	var lastInsertId int
-	err := db.QueryRowContext(ctx, `insert into locations
+
+	err := db.QueryRowContext(
+		ctx,
+		`insert into locations
 (timestamp, devicetimestamp, accuracy, doze, batterylevel, connectiontype, point, altitude, verticalaccuracy, speed,
  "user", device, cog)
 values ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, $12, $13, $14)
 RETURNING id`,
 
-		time.Now(), locationMessage.DeviceTimestamp, locationMessage.Accuracy, dozeBoolean, locationMessage.Battery, locationMessage.Connection, locationMessage.Longitude, locationMessage.Latitude, locationMessage.Altitude, locationMessage.VerticalAccuracy, locationMessage.Speed, locationMessage.User, locationMessage.Device, locationMessage.Course).Scan(&lastInsertId)
+		time.Now(),
+		locationMessage.DeviceTimestamp,
+		locationMessage.Accuracy,
+		dozeBoolean,
+		locationMessage.Battery,
+		locationMessage.Connection,
+		locationMessage.Longitude,
+		locationMessage.Latitude,
+		locationMessage.Altitude,
+		locationMessage.VerticalAccuracy,
+		locationMessage.Speed,
+		locationMessage.User,
+		locationMessage.Device,
+		locationMessage.Course,
+	).Scan(&lastInsertId)
 
 	if ctx.Err() != nil { // We may have timed out
-		log.WithError(ctx.Err()).WithField("timestamp", locationMessage.DeviceTimestamp.String()).WithField("messageId", locationMessage.MessageId).Error("Context error")
+		slog.With("err", ctx.Err()).
+			With("timestamp", locationMessage.DeviceTimestamp.String()).
+			With("messageId", locationMessage.MessageId).
+			ErrorContext(ctx, "Context error")
+
 		return ctx.Err()
 	}
+
 	if err != nil { // Database error
 		var dbErr *pq.Error
 		if errors.As(err, &dbErr) {
 			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
 				// We're skipping this point
-				log.WithError(dbErr).Warn("Could not insert location: integrity_constraint_violation")
+				slog.With("err", dbErr).
+					WarnContext(ctx, "Could not insert location: integrity_constraint_violation")
 				msg.Ack()
+
 				return nil
 			} else {
-				log.WithError(dbErr).
-					WithField("errorCode", dbErr.Code).
-					WithField("errorName", dbErr.Code.Name()).
-					Error("Unable to write location to database")
+				slog.With("err", dbErr).With("errorCode", dbErr.Code).With("errorName", dbErr.Code.Name()).ErrorContext(ctx, "Unable to write location to database")
+
 				return err
 			}
 		}
 	} else {
 		msg.Ack()
-		log.WithField("id", lastInsertId).WithField("messageId", locationMessage.MessageId).Debug("Inserted database location")
+		slog.With("id", lastInsertId).With("messageId", locationMessage.MessageId).DebugContext(ctx, "Inserted database location")
+
 		if enablePrometheus {
 			metrics.locationsReceived.Inc()
 		}
+
 		if geoCodeOnInsert {
 			GeocodingWorkQueue <- lastInsertId
 		}
 	}
+
 	return nil
 }

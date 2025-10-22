@@ -3,11 +3,12 @@ package main
 import (
 	"embed"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"html/template"
 	"net/http"
 	_ "time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 //go:embed templates/*
@@ -42,14 +43,15 @@ func (env *Env) BuildRoutes(configuration *Configuration, router *gin.Engine) {
 			restAPI.GET("locations", env.OTLocationsHandler)
 			restAPI.GET("version", OTVersionHandler)
 		}
-
 	}
+
 	wsAPI := router.Group("ws")
 	{
 		wsAPI.GET("last", func(c *gin.Context) {
 			env.wshandler(c.Writer, c.Request)
 		})
 	}
+
 	router.GET("/location/", env.LocationHandler)
 	router.HEAD("/location/", env.LocationHeadHandler)
 }
@@ -61,6 +63,7 @@ func ErrorHandler(c *gin.Context) {
 	for _, err := range c.Errors {
 		errors += fmt.Sprintf("%v\n", err)
 	}
+
 	if errors != "" {
 		c.String(http.StatusInternalServerError, "Many errors\n%s", errors)
 	}

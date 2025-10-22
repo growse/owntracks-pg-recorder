@@ -6,5 +6,6 @@ func stringSliceContains(haystack []string, needle string) bool {
 			return true
 		}
 	}
+
 	return false
 }

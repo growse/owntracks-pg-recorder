@@ -1,0 +1,14 @@
+---
+version: "2"
+linters:
+  default: all
+  disable:
+    - wsl
+    - wrapcheck
+      
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - golines
+

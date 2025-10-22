@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestGinRoute(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/lib/pq"
 )
@@ -206,10 +206,8 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 		With("messageId", locationMessage.MessageID).
 		InfoContext(ctx, "Inserting into database")
 
-	backoffPolicy := backoff.NewExponentialBackOff()
-	backoffPolicy.MaxElapsedTime = 1 * time.Minute
-	insertFunc := func() error {
-		return insertToDatabase(ctx,
+	insertFunc := func() (any, error) {
+		err2 := insertToDatabase(ctx,
 			env.configuration.GeocodeOnInsert,
 			env.configuration.EnablePrometheus,
 			env.metrics,
@@ -217,9 +215,11 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 			msg,
 			env.database,
 		)
+
+		return nil, err2
 	}
 
-	err = backoff.Retry(insertFunc, backoffPolicy)
+	_, err = backoff.Retry(ctx, insertFunc, backoff.WithMaxElapsedTime(1*time.Minute))
 	if err != nil {
 		slog.With("err", err).
 			With("timestamp", locationMessage.DeviceTimestamp.String()).

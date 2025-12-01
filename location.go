@@ -74,6 +74,7 @@ order by "user", devicetimestamp desc`
 	}
 
 	var locations []Location
+
 	for rows.Next() {
 		location := Location{Type: "location"}
 
@@ -339,6 +340,7 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 	}(rows)
 
 	var results []string
+
 	for rows.Next() {
 		var user string
 
@@ -535,7 +537,7 @@ func (env *Env) PlaceHandler(c *gin.Context) {
 
 	//nolint:gocritic
 	if feature.Properties["bounds"] != nil {
-		bounds := feature.Properties["bounds"].(map[string]interface{})
+		bounds := feature.Properties["bounds"].(map[string]any)
 		rows, err = env.database.Query(`select count(*) as c, date (devicetimestamp)
 from locations
 where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
@@ -545,10 +547,10 @@ where point && ST_SetSRID(ST_MakeBox2D(ST_Point($1
     , 4326)
 group by date (devicetimestamp)
 order by c desc limit 20
-`, bounds["northeast"].(map[string]interface{})["lng"],
-			bounds["northeast"].(map[string]interface{})["lat"],
-			bounds["southwest"].(map[string]interface{})["lng"],
-			bounds["southwest"].(map[string]interface{})["lat"],
+`, bounds["northeast"].(map[string]any)["lng"],
+			bounds["northeast"].(map[string]any)["lat"],
+			bounds["southwest"].(map[string]any)["lng"],
+			bounds["southwest"].(map[string]any)["lat"],
 		)
 	} else if feature.Geometry.IsPoint() &&
 		feature.Geometry.Point != nil &&
@@ -620,6 +622,7 @@ order by c desc limit 20
 	}
 
 	var results []LocationCountPerDay
+
 	for rows.Next() {
 		var result LocationCountPerDay
 
@@ -713,6 +716,7 @@ ORDER BY devicetimestamp `
 	}
 
 	var locations []LocationWithMetadata
+
 	for rows.Next() {
 		location := LocationWithMetadata{}
 
@@ -769,6 +773,7 @@ ORDER BY speed DESC LIMIT %d
 	}
 
 	var locations []LocationWithMetadata
+
 	for rows.Next() {
 		location := LocationWithMetadata{}
 

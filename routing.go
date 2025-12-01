@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	_ "time"
 
 	"github.com/gin-gonic/gin"
@@ -60,9 +61,13 @@ func ErrorHandler(c *gin.Context) {
 	c.Next()
 
 	errors := ""
+
+	var errorsSb63 strings.Builder
 	for _, err := range c.Errors {
-		errors += fmt.Sprintf("%v\n", err)
+		errorsSb63.WriteString(fmt.Sprintf("%v\n", err))
 	}
+
+	errors += errorsSb63.String()
 
 	if errors != "" {
 		c.String(http.StatusInternalServerError, "Many errors\n%s", errors)

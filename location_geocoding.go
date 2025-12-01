@@ -104,7 +104,7 @@ func (env *Env) GetGeocoding(
 	// Build Nominatim search URL
 	// Format: https://nominatim.example.com/search?q=PLACE&format=geojson
 	geocodingURL := fmt.Sprintf(
-		"%s/search?q=%s&format=geojson&addressdetails=1",
+		"%s/reverse?q=%s&format=geojson&addressdetails=1",
 		env.configuration.GeocodeAPIURL,
 		url.QueryEscape(place),
 	)
@@ -172,8 +172,9 @@ func (location *Location) GetReverseGeocoding(ctx context.Context, env *Env) (st
 	)
 
 	geocodingResponse, err := fetchGeocodingResponse(ctx, geocodingURL)
-	slog.With("response", geocodingResponse).
-		DebugContext(ctx, "Geocoding Response")
+	slog.With("url", geocodingURL).
+		With("response", geocodingResponse).
+		DebugContext(ctx, "Reverse Geocoding Response")
 
 	if err != nil {
 		return "", err

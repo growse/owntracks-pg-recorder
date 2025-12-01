@@ -1,11 +1,7 @@
 package main
 
-func stringSliceContains(haystack []string, needle string) bool {
-	for _, bitOfHay := range haystack {
-		if bitOfHay == needle {
-			return true
-		}
-	}
+import "slices"
 
-	return false
+func stringSliceContains(haystack []string, needle string) bool {
+	return slices.Contains(haystack, needle)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,11 +42,11 @@ type MQTTMsg struct {
 // slogMQTTAdapter adapts slog to mqtt.Logger interface.
 type slogMQTTAdapter struct{}
 
-func (s slogMQTTAdapter) Println(v ...interface{}) {
+func (s slogMQTTAdapter) Println(v ...any) {
 	slog.ErrorContext(context.Background(), fmt.Sprint(v...))
 }
 
-func (s slogMQTTAdapter) Printf(format string, v ...interface{}) {
+func (s slogMQTTAdapter) Printf(format string, v ...any) {
 	slog.ErrorContext(context.Background(), fmt.Sprintf(format, v...))
 }
 
@@ -145,13 +146,7 @@ var reconnectingHandler mqtt.ReconnectHandler = func(_ mqtt.Client, _ *mqtt.Clie
 }
 
 func filterUsersContainsUser(filterUsers string, user string) bool {
-	for _, part := range strings.Split(filterUsers, ",") {
-		if part == user {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(strings.Split(filterUsers, ","), user)
 }
 
 //nolint:funlen

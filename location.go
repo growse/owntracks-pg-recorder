@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -823,7 +822,7 @@ type DeviceRecord struct {
 	Device           string     `binding:"required" json:"device"`
 }
 
-func (env *Env) getPoints(limit int) (*sql.Rows, error) {
+func (env *Env) getPoints(from *time.Time, to *time.Time) (*sql.Rows, error) {
 	query := `SELECT
     devicetimestamp, timestamp, accuracy, geocoding, batterylevel, connectiontype, doze, st_y(
     st_astext(
@@ -832,12 +831,10 @@ func (env *Env) getPoints(limit int) (*sql.Rows, error) {
     point)) AS longitude, speed, altitude, verticalaccuracy, "user", device
 
 FROM locations
+WHERE deviceTimestamp>=$1 AND deviceTimestamp<=$2
 ORDER by devicetimestamp ASC`
-	if limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", limit)
-	}
 
-	return env.database.Query(query)
+	return env.database.Query(query, from, to)
 }
 
 // renderDeviceRecordAsGeoJSON converts a DeviceRecord to a GeoJSON Feature.
@@ -884,14 +881,24 @@ func writeExportHTTPHeader(c *gin.Context, filename string) *gzip.Writer {
 //
 //nolint:funlen
 func (env *Env) ExportGeoJSON(c *gin.Context) {
-	limit, err := strconv.Atoi(c.Param("limit"))
+	fromParam := c.Param("from")
+	toParam := c.Param("to")
+
+	from, err := time.Parse(time.RFC3339, fromParam)
 	if err != nil {
 		_ = c.Error(err)
 
 		return
 	}
 
-	rows, err := env.getPoints(limit)
+	to, err := time.Parse(time.RFC3339, toParam)
+	if err != nil {
+		_ = c.Error(err)
+
+		return
+	}
+
+	rows, err := env.getPoints(&from, &to)
 	if err != nil {
 		_ = c.Error(err)
 
@@ -947,94 +954,4 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 
 	jsonBytes, _ := featureCollection.MarshalJSON()
 	_, _ = gzipWriter.Write(jsonBytes)
-}
-
-// Export exports location data as a gzipped JSON file.
-//
-//nolint:funlen
-func (env *Env) Export(c *gin.Context) {
-	limit, err := strconv.Atoi(c.Param("limit"))
-	if err != nil {
-		_ = c.Error(err)
-
-		return
-	}
-
-	rows, err := env.getPoints(limit)
-	if err != nil {
-		_ = c.Error(err)
-
-		return
-	}
-
-	defer func() { _ = rows.Close() }()
-
-	if rows.Err() != nil {
-		_ = c.Error(rows.Err())
-
-		return
-	}
-
-	writer := c.Writer
-	gzipWriter := writeExportHTTPHeader(c, "owntracks-locations.json.gz")
-	_, _ = gzipWriter.Write([]byte("["))
-
-	defer func() {
-		_ = gzipWriter.Close()
-
-		writer.Flush()
-	}()
-
-	var (
-		first   = true
-		counter = 0
-	)
-
-	for rows.Next() {
-		counter++
-
-		var deviceRecord DeviceRecord
-
-		err := rows.Scan(
-			&deviceRecord.DeviceTimestamp,
-			&deviceRecord.Timestamp,
-			&deviceRecord.Accuracy,
-			&deviceRecord.Geocoding,
-			&deviceRecord.BatteryLevel,
-			&deviceRecord.ConnectionType,
-			&deviceRecord.Doze,
-			&deviceRecord.Latitude,
-			&deviceRecord.Longitude,
-			&deviceRecord.Speed,
-			&deviceRecord.Altitude,
-			&deviceRecord.VerticalAccuracy,
-			&deviceRecord.User,
-			&deviceRecord.Device,
-		)
-		if err != nil {
-			slog.With("err", err).
-				ErrorContext(c.Request.Context(), "Error scanning row")
-		} else {
-			deviceRecordJSON, err := json.Marshal(deviceRecord)
-			if err != nil {
-				slog.With("err", err).
-					ErrorContext(c.Request.Context(), "Error marshalling device record")
-			} else {
-				if !first {
-					_, _ = gzipWriter.Write([]byte(","))
-				} else {
-					first = false
-				}
-
-				_, _ = gzipWriter.Write(deviceRecordJSON)
-			}
-		}
-
-		if counter%100 == 0 {
-			_ = gzipWriter.Flush()
-			writer.(http.Flusher).Flush()
-		}
-	}
-
-	_, _ = gzipWriter.Write([]byte("]"))
 }

@@ -32,9 +32,8 @@ func (env *Env) BuildRoutes(configuration *Configuration, router *gin.Engine) {
 	router.DELETE("points/:id", env.DeleteLocationPoint)
 	router.GET("points/:date", env.GetPointsForDate)
 
-	router.GET("export/:limit", env.Export)
-	router.GET("export/", env.Export)
 	router.GET("export/geojson/:limit", env.ExportGeoJSON)
+	router.GET("export/geojson/:from/:to", env.ExportGeoJSON)
 
 	otRecorderAPI := router.Group("api/")
 	{

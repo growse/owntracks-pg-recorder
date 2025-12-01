@@ -877,6 +877,9 @@ func writeExportHTTPHeader(c *gin.Context, filename string) *gzip.Writer {
 	return gzipWriter
 }
 
+const featureCollectionHeader = `{"type":"FeatureCollection", "features":[`
+const featureCollectionFooter = `]}`
+
 // ExportGeoJSON exports location data as a GeoJSON file.
 //
 //nolint:funlen
@@ -922,7 +925,8 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 		writer.Flush()
 	}()
 
-	featureCollection := geojson.NewFeatureCollection()
+	counter := 0
+	_, _ = gzipWriter.Write([]byte(featureCollectionHeader))
 
 	for rows.Next() {
 		var deviceRecord DeviceRecord
@@ -948,10 +952,27 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 				ErrorContext(c.Request.Context(), "Error scanning row")
 		} else {
 			feature := renderDeviceRecordAsGeoJSON(deviceRecord)
-			featureCollection.AddFeature(feature)
+
+			featureBytes, err := feature.MarshalJSON()
+			if err != nil {
+				slog.With("err", err).
+					ErrorContext(c.Request.Context(), "Error marshalling feature to JSON")
+			} else {
+				if counter > 0 {
+					_, _ = gzipWriter.Write([]byte(","))
+				}
+
+				_, _ = gzipWriter.Write(featureBytes)
+			}
 		}
+
+		if counter%100 == 0 {
+			_ = gzipWriter.Flush()
+			writer.Flush()
+		}
+
+		counter++
 	}
 
-	jsonBytes, _ := featureCollection.MarshalJSON()
-	_, _ = gzipWriter.Write(jsonBytes)
+	_, _ = gzipWriter.Write([]byte(featureCollectionFooter))
 }

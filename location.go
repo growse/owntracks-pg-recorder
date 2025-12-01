@@ -914,7 +914,7 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 	}
 
 	writer := c.Writer
-	gzipWriter := writeExportHTTPHeader(c, "owntracks-geojson.json.gz ")
+	gzipWriter := writeExportHTTPHeader(c, "owntracks-geojson.json")
 
 	defer func() {
 		_ = gzipWriter.Close()

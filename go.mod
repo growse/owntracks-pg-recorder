@@ -11,7 +11,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/klauspost/compress v1.18.2
 	github.com/lib/pq v1.10.9
 	github.com/martinlindhe/unit v0.0.0-20230420213220-4adfd7d0a0d6
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -36,6 +35,7 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

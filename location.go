@@ -857,6 +857,11 @@ func renderDeviceRecordAsGeoJSON(deviceRecord DeviceRecord) *geojson.Feature {
 
 	feature := geojson.NewFeature(geometry)
 	feature.SetProperty("timestamp", deviceRecord.DeviceTimestamp.Unix())
+	feature.SetProperty("accuracy", deviceRecord.Accuracy)
+	feature.SetProperty("battery", deviceRecord.BatteryLevel)
+	feature.SetProperty("connection", deviceRecord.ConnectionType)
+	feature.SetProperty("velocity", deviceRecord.Speed)
+	feature.SetProperty("vertical_accuracy", deviceRecord.VerticalAccuracy)
 
 	return feature
 }

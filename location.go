@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/martinlindhe/unit"
+	geojson "github.com/paulmach/go.geojson"
 )
 
 /*
@@ -141,16 +142,9 @@ order by devicetimestamp desc limit 1`
 
 	err := env.database.QueryRowContext(ctx, query, user).
 		Scan(
-			&location.Username,
-			&location.Device,
-			&geocodingMaybe,
-			&location.Latitude,
-			&location.Longitude,
-			&timestamp,
-			&location.Accuracy,
-			&location.Altitude,
-			&location.VerticalAccuracy,
-			&location.Speed,
+			&location.Username, &location.Device, &geocodingMaybe, &location.Latitude,
+			&location.Longitude, &timestamp, &location.Accuracy, &location.Altitude,
+			&location.VerticalAccuracy, &location.Speed,
 		)
 	if geocodingMaybe.Valid {
 		location.Geocoding = geocodingMaybe.String
@@ -829,10 +823,7 @@ type DeviceRecord struct {
 	Device           string     `binding:"required" json:"device"`
 }
 
-//nolint:funlen
-func (env *Env) Export(c *gin.Context) {
-	limit, err := strconv.Atoi(c.Param("limit"))
-
+func (env *Env) getPoints(limit int) (*sql.Rows, error) {
 	query := `SELECT
     devicetimestamp, timestamp, accuracy, geocoding, batterylevel, connectiontype, doze, st_y(
     st_astext(
@@ -842,11 +833,56 @@ func (env *Env) Export(c *gin.Context) {
 
 FROM locations
 ORDER by devicetimestamp ASC`
-	if err == nil && limit > 0 {
+	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	rows, err := env.database.Query(query)
+	return env.database.Query(query)
+}
+
+// renderDeviceRecordAsGeoJSON converts a DeviceRecord to a GeoJSON Feature.
+//
+
+func renderDeviceRecordAsGeoJSON(deviceRecord DeviceRecord) ([]byte, error) {
+	var geometry *geojson.Geometry
+	if deviceRecord.Altitude == nil {
+		geometry = geojson.NewPointGeometry(
+			[]float64{deviceRecord.Longitude, deviceRecord.Latitude},
+		)
+	} else {
+		geometry = geojson.NewPointGeometry([]float64{
+			deviceRecord.Longitude, deviceRecord.Latitude, float64(*deviceRecord.Altitude),
+		})
+	}
+
+	feature := geojson.NewFeature(geometry)
+	feature.SetProperty("timestamp", deviceRecord.DeviceTimestamp.Unix())
+
+	return json.Marshal(feature)
+}
+
+// ExportGeoJSON exports location data as a GeoJSON file.
+func (env *Env) ExportGeoJSON(c *gin.Context) {
+	env.export(c, renderDeviceRecordAsGeoJSON)
+}
+
+// Export exports location data as a gzipped JSON file.
+func (env *Env) Export(c *gin.Context) {
+	env.export(c, func(deviceRecord DeviceRecord) ([]byte, error) {
+		return json.Marshal(deviceRecord)
+	})
+}
+
+//nolint:funlen
+func (env *Env) export(c *gin.Context, renderFunction func(DeviceRecord) ([]byte, error)) {
+	limit, err := strconv.Atoi(c.Param("limit"))
+	if err != nil {
+		_ = c.Error(err)
+
+		return
+	}
+
+	rows, err := env.getPoints(limit)
 	if err != nil {
 		_ = c.Error(err)
 
@@ -902,7 +938,7 @@ ORDER by devicetimestamp ASC`
 			slog.With("err", err).
 				ErrorContext(c.Request.Context(), "Error scanning row")
 		} else {
-			deviceRecordJSON, err := json.Marshal(deviceRecord)
+			deviceRecordJSON, err := renderFunction(deviceRecord)
 			if err != nil {
 				slog.With("err", err).
 					ErrorContext(c.Request.Context(), "Error marshalling device record")

@@ -34,6 +34,7 @@ func (env *Env) BuildRoutes(configuration *Configuration, router *gin.Engine) {
 
 	router.GET("export/:limit", env.Export)
 	router.GET("export/", env.Export)
+	router.GET("export/geojson/:limit", env.ExportGeoJSON)
 
 	otRecorderAPI := router.Group("api/")
 	{

@@ -843,7 +843,7 @@ ORDER by devicetimestamp ASC`
 // renderDeviceRecordAsGeoJSON converts a DeviceRecord to a GeoJSON Feature.
 //
 
-func renderDeviceRecordAsGeoJSON(deviceRecord DeviceRecord) ([]byte, error) {
+func renderDeviceRecordAsGeoJSON(deviceRecord DeviceRecord) *geojson.Feature {
 	var geometry *geojson.Geometry
 	if deviceRecord.Altitude == nil {
 		geometry = geojson.NewPointGeometry(
@@ -858,23 +858,27 @@ func renderDeviceRecordAsGeoJSON(deviceRecord DeviceRecord) ([]byte, error) {
 	feature := geojson.NewFeature(geometry)
 	feature.SetProperty("timestamp", deviceRecord.DeviceTimestamp.Unix())
 
-	return json.Marshal(feature)
+	return feature
+}
+
+func writeExportHTTPHeader(c *gin.Context, filename string) *gzip.Writer {
+	writer := c.Writer
+	header := writer.Header()
+	header.Set("Content-Type", "application/json")
+	header.Set("Content-Disposition", "attachment; filename="+filename)
+	header.Set("Transfer-Encoding", "chunked")
+	header.Set("Content-Encoding", "gzip")
+	writer.WriteHeader(http.StatusOK)
+	writer.(http.Flusher).Flush()
+	gzipWriter := gzip.NewWriter(writer)
+
+	return gzipWriter
 }
 
 // ExportGeoJSON exports location data as a GeoJSON file.
-func (env *Env) ExportGeoJSON(c *gin.Context) {
-	env.export(c, renderDeviceRecordAsGeoJSON)
-}
-
-// Export exports location data as a gzipped JSON file.
-func (env *Env) Export(c *gin.Context) {
-	env.export(c, func(deviceRecord DeviceRecord) ([]byte, error) {
-		return json.Marshal(deviceRecord)
-	})
-}
-
+//
 //nolint:funlen
-func (env *Env) export(c *gin.Context, renderFunction func(DeviceRecord) ([]byte, error)) {
+func (env *Env) ExportGeoJSON(c *gin.Context) {
 	limit, err := strconv.Atoi(c.Param("limit"))
 	if err != nil {
 		_ = c.Error(err)
@@ -898,15 +902,83 @@ func (env *Env) export(c *gin.Context, renderFunction func(DeviceRecord) ([]byte
 	}
 
 	writer := c.Writer
-	header := writer.Header()
-	header.Set("Content-Type", "application/json")
-	header.Set("Content-Disposition", "attachment; filename=owntracks-recorder-backup.json")
-	header.Set("Transfer-Encoding", "chunked")
-	header.Set("Content-Encoding", "gzip")
-	writer.WriteHeader(http.StatusOK)
-	writer.(http.Flusher).Flush()
-	gzipWriter := gzip.NewWriter(writer)
+	gzipWriter := writeExportHTTPHeader(c, "owntracks-geojson.json.gz ")
+
+	defer func() {
+		_ = gzipWriter.Close()
+
+		writer.Flush()
+	}()
+
+	featureCollection := geojson.NewFeatureCollection()
+
+	for rows.Next() {
+		var deviceRecord DeviceRecord
+
+		err := rows.Scan(
+			&deviceRecord.DeviceTimestamp,
+			&deviceRecord.Timestamp,
+			&deviceRecord.Accuracy,
+			&deviceRecord.Geocoding,
+			&deviceRecord.BatteryLevel,
+			&deviceRecord.ConnectionType,
+			&deviceRecord.Doze,
+			&deviceRecord.Latitude,
+			&deviceRecord.Longitude,
+			&deviceRecord.Speed,
+			&deviceRecord.Altitude,
+			&deviceRecord.VerticalAccuracy,
+			&deviceRecord.User,
+			&deviceRecord.Device,
+		)
+		if err != nil {
+			slog.With("err", err).
+				ErrorContext(c.Request.Context(), "Error scanning row")
+		} else {
+			feature := renderDeviceRecordAsGeoJSON(deviceRecord)
+			featureCollection.AddFeature(feature)
+		}
+	}
+
+	jsonBytes, _ := featureCollection.MarshalJSON()
+	_, _ = gzipWriter.Write(jsonBytes)
+}
+
+// Export exports location data as a gzipped JSON file.
+//
+//nolint:funlen
+func (env *Env) Export(c *gin.Context) {
+	limit, err := strconv.Atoi(c.Param("limit"))
+	if err != nil {
+		_ = c.Error(err)
+
+		return
+	}
+
+	rows, err := env.getPoints(limit)
+	if err != nil {
+		_ = c.Error(err)
+
+		return
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	if rows.Err() != nil {
+		_ = c.Error(rows.Err())
+
+		return
+	}
+
+	writer := c.Writer
+	gzipWriter := writeExportHTTPHeader(c, "owntracks-locations.json.gz")
 	_, _ = gzipWriter.Write([]byte("["))
+
+	defer func() {
+		_ = gzipWriter.Close()
+
+		writer.Flush()
+	}()
 
 	var (
 		first   = true
@@ -938,7 +1010,7 @@ func (env *Env) export(c *gin.Context, renderFunction func(DeviceRecord) ([]byte
 			slog.With("err", err).
 				ErrorContext(c.Request.Context(), "Error scanning row")
 		} else {
-			deviceRecordJSON, err := renderFunction(deviceRecord)
+			deviceRecordJSON, err := json.Marshal(deviceRecord)
 			if err != nil {
 				slog.With("err", err).
 					ErrorContext(c.Request.Context(), "Error marshalling device record")
@@ -960,7 +1032,4 @@ func (env *Env) export(c *gin.Context, renderFunction func(DeviceRecord) ([]byte
 	}
 
 	_, _ = gzipWriter.Write([]byte("]"))
-	_ = gzipWriter.Close()
-
-	writer.(http.Flusher).Flush()
 }

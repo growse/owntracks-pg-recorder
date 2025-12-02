@@ -64,4 +64,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-toolchain go1.25.4
+toolchain go1.25.5

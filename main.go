@@ -80,9 +80,17 @@ func run(ctx context.Context, _ []string) error {
 	}
 
 	if env.configuration.DbHost != "" {
-		env.setupDatabase(ctx)
+		err := env.setupDatabase(ctx)
+		if err != nil {
+			return fmt.Errorf("database setup failed: %w", err)
+		}
 
-		GeocodingWorkQueue = make(chan int)
+		GeocodingWorkQueue = make(chan int, 100)
+
+		go func() {
+			<-ctx.Done()
+			close(GeocodingWorkQueue)
+		}()
 		go env.UpdateLocationWithGeocoding(ctx, GeocodingWorkQueue)
 
 		if env.configuration.EnableGeocodingCrawler {
@@ -137,7 +145,7 @@ func (env *Env) closeDatabase(ctx context.Context) {
 	}()
 }
 
-func (env *Env) setupDatabase(ctx context.Context) {
+func (env *Env) setupDatabase(ctx context.Context) error {
 	connectionString := fmt.Sprintf(
 		"host=%s user=%s dbname=%s sslmode=%s password=%s",
 		env.configuration.DbHost,
@@ -149,18 +157,20 @@ func (env *Env) setupDatabase(ctx context.Context) {
 
 	database, err := sql.Open("postgres", connectionString)
 	if err != nil {
-		slog.With("err", err).ErrorContext(ctx, "Error connecting to database")
+		return fmt.Errorf("error opening database connection: %w", err)
 	}
 
 	err = database.Ping()
 	if err != nil {
-		slog.With("err", err).ErrorContext(ctx, "Error connecting to database")
-	} else {
-		slog.InfoContext(ctx, "Database connected")
+		return fmt.Errorf("error pinging database: %w", err)
 	}
+
+	slog.InfoContext(ctx, "Database connected")
 
 	database.SetMaxOpenConns(env.configuration.MaxDBOpenConnections)
 	database.SetMaxIdleConns(1)
 	database.SetConnMaxLifetime(time.Hour)
 	env.database = database
+
+	return nil
 }

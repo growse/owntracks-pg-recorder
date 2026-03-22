@@ -3,6 +3,9 @@ set dotenv-load := true
 default:
     just --list
 
+run:
+    go run .
+
 test:
     go test -cover -covermode=count -coverprofile=$@ -v
 

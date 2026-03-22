@@ -70,7 +70,7 @@ order by "user", devicetimestamp desc`
 	defer func() { _ = rows.Close() }()
 
 	if rows.Err() != nil {
-		return nil, err
+		return nil, rows.Err()
 	}
 
 	var locations []Location
@@ -218,7 +218,7 @@ order by devicetimestamp desc`
 	defer func() { _ = rows.Close() }()
 
 	if rows.Err() != nil {
-		return nil, err
+		return nil, rows.Err()
 	}
 
 	var (
@@ -274,7 +274,7 @@ func (env *Env) LocationHandler(c *gin.Context) {
 
 	c.Header(
 		"Last-modified",
-		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jal 2006 15:04:05 GMT"),
+		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
 	c.JSON(200, gin.H{
 		"name":          location.GeocodedName(ctx),
@@ -296,7 +296,7 @@ func (env *Env) LocationHeadHandler(c *gin.Context) {
 
 	c.Header(
 		"Last-modified",
-		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jal 2006 15:04:05 GMT"),
+		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
 	c.Status(200)
 }
@@ -871,7 +871,11 @@ func writeExportHTTPHeader(c *gin.Context, filename string) *gzip.Writer {
 	header.Set("Transfer-Encoding", "chunked")
 	header.Set("Content-Encoding", "gzip")
 	writer.WriteHeader(http.StatusOK)
-	writer.(http.Flusher).Flush()
+
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
 	gzipWriter := gzip.NewWriter(writer)
 
 	return gzipWriter

@@ -220,6 +220,7 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 			With("timestamp", locationMessage.DeviceTimestamp.String()).
 			With("messageId", locationMessage.MessageID).
 			ErrorContext(ctx, "unable to insert location message to database")
+		msg.Ack()
 	}
 }
 

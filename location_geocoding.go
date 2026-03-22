@@ -127,7 +127,8 @@ func RoundCoordinate(input float64) float64 {
 	if err != nil {
 		slog.With("input", input).
 			Error("Unable to truncate float to precision")
-		panic(err)
+
+		return input
 	}
 
 	return rounded

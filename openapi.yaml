@@ -1,0 +1,519 @@
+openapi: 3.1.0
+info:
+  title: OwnTracks PG Recorder
+  description: >
+    An OwnTracks recorder that subscribes to an MQTT broker and persists
+    location data to a PostgreSQL/PostGIS database. Exposes an HTTP API
+    compatible with the OwnTracks Recorder REST API.
+  license:
+    name: MIT
+    identifier: MIT
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+# No authentication is implemented; declare globally as empty.
+security: []
+
+paths:
+
+  /location:
+    get:
+      summary: Last location for the default user
+      operationId: getLastLocation
+      tags: [Location]
+      responses:
+        "200":
+          description: Last known location
+          headers:
+            Last-Modified:
+              description: RFC 1123 timestamp of the location fix
+              schema:
+                type: string
+                example: "Mon, 02 Jan 2006 15:04:05 GMT"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationSummary"
+        "404":
+          description: No location data found for the default user
+        "500":
+          $ref: "#/components/responses/InternalError"
+    head:
+      summary: Last-Modified header for the default user's location
+      operationId: headLastLocation
+      tags: [Location]
+      responses:
+        "200":
+          description: Headers only — no body
+          headers:
+            Last-Modified:
+              description: RFC 1123 timestamp of the location fix
+              schema:
+                type: string
+                example: "Mon, 02 Jan 2006 15:04:05 GMT"
+        "404":
+          description: No location data found for the default user
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/0/version:
+    get:
+      summary: Application version
+      operationId: getVersion
+      tags: [OwnTracks API]
+      responses:
+        "200":
+          description: Version string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "1.0-owntracks-pg-recorder"
+
+  /api/0/list:
+    get:
+      summary: List users or devices
+      description: >
+        Without a `user` query parameter, returns all known usernames.
+        With `user`, returns all device names for that user.
+      operationId: listUsersOrDevices
+      tags: [OwnTracks API]
+      parameters:
+        - name: user
+          in: query
+          required: false
+          description: If provided, list devices for this user instead of listing users
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of user or device names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: string
+              example:
+                results: ["alice", "bob"]
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/0/last:
+    get:
+      summary: Last known position(s)
+      description: >
+        Returns the last known position. Provide both `user` and `device` to
+        get a single result; omit either to get all matching positions.
+      operationId: getLastPositions
+      tags: [OwnTracks API]
+      parameters:
+        - name: user
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Array of location objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/0/locations:
+    get:
+      summary: Location history
+      operationId: getLocations
+      tags: [OwnTracks API]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: >
+            Start of time range (`2006-01-02T15:04:05` format, no timezone).
+            Defaults to 24 hours ago.
+          schema:
+            type: string
+            example: "2024-01-01T00:00:00"
+        - name: to
+          in: query
+          required: false
+          description: >
+            End of time range (`2006-01-02T15:04:05` format, no timezone).
+            Defaults to now.
+          schema:
+            type: string
+            example: "2024-01-02T00:00:00"
+        - name: user
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Location history wrapped in a data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Location"
+        "400":
+          description: Invalid `from` or `to` timestamp format
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # GET /points/{date} and DELETE /points/{id} share the same path template.
+  # date and id are structurally identical path parameters (both strings/ints
+  # in the same position), so they are described under one path item.
+  /points/{value}:
+    get:
+      summary: Location points for a specific date
+      operationId: getPointsForDate
+      tags: [Points]
+      parameters:
+        - name: value
+          in: path
+          required: true
+          description: Date to query (e.g. `2024-01-15`)
+          schema:
+            type: string
+            format: date
+            example: "2024-01-15"
+      responses:
+        "200":
+          description: HTML page listing location points for the date
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Invalid date format
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      summary: Delete a location point
+      operationId: deleteLocationPoint
+      tags: [Points]
+      parameters:
+        - name: value
+          in: path
+          required: true
+          description: Numeric ID of the location point to delete
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Point deleted successfully
+        "400":
+          description: Invalid ID
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /inaccurate:
+    get:
+      summary: Inaccurate location points
+      description: >
+        Returns the 20 location points with the poorest GPS accuracy,
+        ordered by calculated speed (descending).
+      operationId: getInaccuratePoints
+      tags: [Points]
+      responses:
+        "200":
+          description: HTML page listing inaccurate points
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: No locations found
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /export/geojson/{from}/{to}:
+    get:
+      summary: Export locations as GeoJSON
+      description: >
+        Streams a gzip-compressed GeoJSON FeatureCollection for all locations
+        in the given time range.
+      operationId: exportGeoJSON
+      tags: [Export]
+      parameters:
+        - name: from
+          in: path
+          required: true
+          description: Start timestamp (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2024-01-01T00:00:00Z"
+        - name: to
+          in: path
+          required: true
+          description: End timestamp (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2024-01-02T00:00:00Z"
+      responses:
+        "200":
+          description: Gzip-compressed GeoJSON FeatureCollection
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: "attachment; filename=owntracks-geojson.json"
+            Content-Encoding:
+              schema:
+                type: string
+                example: gzip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeoJSONFeatureCollection"
+        "400":
+          description: Invalid timestamp format
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /place:
+    get:
+      summary: Place search page
+      operationId: getPlacePage
+      tags: [Place]
+      responses:
+        "200":
+          description: HTML search form
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      summary: Search for time spent near a place
+      operationId: searchPlace
+      tags: [Place]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [place]
+              properties:
+                place:
+                  type: string
+                  description: Place name to geocode and search for nearby location history
+      responses:
+        "200":
+          description: HTML results page showing days with location data near the place
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Missing or invalid place parameter
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /ws/last:
+    get:
+      summary: WebSocket stream of latest location
+      description: >
+        Upgrades to a WebSocket connection. Send the text message `"LAST"` to
+        receive a JSON array of the latest Location objects.
+      operationId: wsLastLocation
+      tags: [WebSocket]
+      responses:
+        "101":
+          description: WebSocket upgrade successful
+        "200":
+          description: Fallback non-upgrade response (should not occur in normal use)
+        "400":
+          description: WebSocket upgrade failed
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Only available when `OT_PG_RECORDER_ENABLEPROMETHEUS=true`.
+      operationId: getMetrics
+      tags: [Observability]
+      responses:
+        "200":
+          description: Prometheus text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          description: Endpoint not enabled
+
+components:
+  schemas:
+
+    Location:
+      type: object
+      description: A recorded OwnTracks location fix
+      properties:
+        tst:
+          type: integer
+          format: int64
+          description: Device timestamp (Unix seconds)
+          example: 1704067200
+        acc:
+          type: number
+          format: float
+          description: Horizontal GPS accuracy (metres)
+          example: 12.5
+        _type:
+          type: string
+          description: Always "location"
+          example: location
+        lat:
+          type: number
+          format: double
+          description: WGS84 latitude
+          example: 51.5074
+        lon:
+          type: number
+          format: double
+          description: WGS84 longitude
+          example: -0.1278
+        alt:
+          type: number
+          format: float
+          description: Altitude (metres)
+          example: 42.0
+        vac:
+          type: number
+          format: float
+          description: Vertical accuracy (metres)
+          example: 5.0
+        cog:
+          type: number
+          format: float
+          description: Course over ground (degrees, 0–360)
+          example: 270.0
+        vel:
+          type: number
+          format: float
+          description: Speed (km/h)
+          example: 48.0
+        addr:
+          type: string
+          description: Reverse-geocoded address (empty if geocoding is disabled)
+          example: "10 Downing Street, London"
+        username:
+          type: string
+          example: alice
+        device:
+          type: string
+          example: iphone
+
+    LocationSummary:
+      type: object
+      description: Simplified last-location summary for the default user
+      properties:
+        name:
+          type: string
+          description: Geocoded place name (city, town, or village)
+          example: London
+        latitude:
+          type: string
+          description: Latitude formatted to 2 decimal places
+          example: "51.51"
+        longitude:
+          type: string
+          description: Longitude formatted to 2 decimal places
+          example: "-0.13"
+        totalDistance:
+          type: string
+          description: Humanised total distance recorded (miles)
+          example: "12,345.67"
+
+    GeoJSONFeatureCollection:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [FeatureCollection]
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeoJSONFeature"
+
+    GeoJSONFeature:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Feature]
+        geometry:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [Point]
+            coordinates:
+              type: array
+              description: "[longitude, latitude, altitude]"
+              items:
+                type: number
+              minItems: 3
+              maxItems: 3
+        properties:
+          type: object
+          properties:
+            timestamp:
+              type: integer
+              format: int64
+              description: Unix timestamp of the fix
+            accuracy:
+              type: number
+              format: float
+            battery:
+              type: integer
+            connection:
+              type: string
+            velocity:
+              type: number
+              format: float
+            vertical_accuracy:
+              type: number
+              format: float
+
+  responses:
+    InternalError:
+      description: Internal server error
+      content:
+        text/plain:
+          schema:
+            type: string

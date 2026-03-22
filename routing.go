@@ -63,7 +63,7 @@ func ErrorHandler(c *gin.Context) {
 
 	var errorsSb63 strings.Builder
 	for _, err := range c.Errors {
-		errorsSb63.WriteString(fmt.Sprintf("%v\n", err))
+		fmt.Fprintf(&errorsSb63, "%v\n", err)
 	}
 
 	errors += errorsSb63.String()

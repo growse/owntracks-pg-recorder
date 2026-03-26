@@ -4,20 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
+	"html/template"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/braintree/manners"
-	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 )
 
 var (
-	GeocodingWorkQueue chan int
+	GeocodingWorkQueue   chan int
+	DawarichForwardQueue chan MQTTMsg
 )
 
 func InternalError(ctx context.Context, err error) {
@@ -28,10 +30,22 @@ type Env struct {
 	database      *sql.DB
 	configuration *Configuration
 	metrics       *Metrics
+	insertSem     chan struct{} // bounds concurrent DB inserts
+	tmpl          *template.Template
 }
 
 func main() {
 	ctx := context.Background()
+
+	if len(os.Args) > 1 && os.Args[1] == "sync-dawarich" {
+		ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer cancelFunc()
+		if err := runSyncDawarich(ctx, os.Args[2:]); err != nil {
+			slog.With("err", err).ErrorContext(ctx, "Sync failed")
+			os.Exit(1)
+		}
+		return
+	}
 
 	err := run(ctx, os.Args)
 	if err != nil {
@@ -113,20 +127,30 @@ func run(ctx context.Context, _ []string) error {
 	defer env.closeDatabase(ctx)
 
 	// Get the router
-	if env.configuration.Debug {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", env.configuration.Port),
+		Handler: env.BuildRoutes(configuration),
 	}
 
-	router := gin.Default()
-	env.BuildRoutes(configuration, router)
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		slog.InfoContext(shutdownCtx, "Shutting down HTTP server")
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			slog.With("err", err).ErrorContext(shutdownCtx, "Error shutting down HTTP server")
+		}
+	}()
+
 	slog.With("httpPort", env.configuration.Port).
 		InfoContext(ctx, "Listening on HTTP")
 
-	err = manners.ListenAndServe(fmt.Sprintf(":%d", env.configuration.Port), router)
-	if err != nil {
+	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.With("err", err).ErrorContext(ctx, "Error starting server")
+
+		return err
 	}
 
 	return nil

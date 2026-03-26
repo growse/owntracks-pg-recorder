@@ -1,16 +1,18 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
-func TestGinRoute(t *testing.T) {
+func TestChiRoute(t *testing.T) {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 
-	router := gin.Default()
 	env := Env{}
-	env.BuildRoutes(&Configuration{}, router)
+	router := env.BuildRoutes(&Configuration{})
+
+	req := httptest.NewRequest(http.MethodGet, "/location/", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 }

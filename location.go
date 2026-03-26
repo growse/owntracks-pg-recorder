@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	"database/sql"
@@ -13,7 +12,7 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 	"github.com/martinlindhe/unit"
 	geojson "github.com/paulmach/go.geojson"
@@ -252,14 +251,14 @@ order by devicetimestamp desc`
 	return &locations, nil
 }
 
-func (env *Env) LocationHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+func (env *Env) LocationHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	slog.With("user", env.configuration.DefaultUser).
-		DebugContext(c.Request.Context(), "Getting last location for default user")
+		DebugContext(ctx, "Getting last location for default user")
 
 	location, err := env.GetLastLocationForUser(ctx, env.configuration.DefaultUser)
 	if err != nil {
-		c.String(500, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -267,16 +266,16 @@ func (env *Env) LocationHandler(c *gin.Context) {
 	distance, err := env.GetTotalDistanceInMiles(ctx)
 	if err !=
 		nil {
-		c.String(500, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
-	c.Header(
+	w.Header().Set(
 		"Last-modified",
 		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
-	c.JSON(200, gin.H{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"name":          location.GeocodedName(ctx),
 		"latitude":      fmt.Sprintf("%.2f", location.Latitude),
 		"longitude":     fmt.Sprintf("%.2f", location.Longitude),
@@ -284,46 +283,46 @@ func (env *Env) LocationHandler(c *gin.Context) {
 	})
 }
 
-func (env *Env) LocationHeadHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+func (env *Env) LocationHeadHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
 	location, err := env.GetLastLocationForUser(ctx, env.configuration.DefaultUser)
 	if err != nil {
-		c.String(500, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
-	c.Header(
+	w.Header().Set(
 		"Last-modified",
 		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
-	c.Status(200)
+	w.WriteHeader(http.StatusOK)
 }
 
-func (env *Env) OTListUserHandler(c *gin.Context) {
+func (env *Env) OTListUserHandler(w http.ResponseWriter, r *http.Request) {
 	var (
 		rows *sql.Rows
 		err  error
 	)
 
-	if c.Query("user") != "" {
+	if r.URL.Query().Get("user") != "" {
 		rows, err = env.database.Query(
 			`select distinct "device" from locations where "user"=$1 order by "device";`,
-			c.Query("user"),
+			r.URL.Query().Get("user"),
 		)
 	} else {
 		rows, err = env.database.Query(`select distinct "user" from locations order by "user";`)
 	}
 
 	if err != nil {
-		_ = c.Error(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
 	if rows.Err() != nil {
-		_ = c.Error(rows.Err())
+		http.Error(w, rows.Err().Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -340,42 +339,42 @@ func (env *Env) OTListUserHandler(c *gin.Context) {
 		err := rows.Scan(&user)
 		if err != nil {
 			slog.With("err", err).
-				ErrorContext(c.Request.Context(), "Error pulling user from database")
+				ErrorContext(r.Context(), "Error pulling user from database")
 		}
 
 		results = append(results, user)
 	}
 
-	c.JSON(200, gin.H{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"results": results,
 	})
 }
 
 //nolint:cyclop
-func (env *Env) OTLastPosHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	user := c.Query("user")
+func (env *Env) OTLastPosHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user := r.URL.Query().Get("user")
 
-	device := c.Query("device")
+	device := r.URL.Query().Get("device")
 	if user != "" && device != "" {
 		location, err := env.GetLastLocationForUser(ctx, user)
 		if err != nil {
-			c.String(500, err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			return
 		}
 
-		c.JSON(200, [1]*Location{location})
+		respondJSON(w, http.StatusOK, [1]*Location{location})
 	} else {
 		locations, err := env.GetLastLocations(ctx)
 		if err != nil {
-			c.String(500, err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			return
 		}
 
 		if locations == nil || len(*locations) == 0 {
-			c.String(500, "No location found")
+			http.Error(w, "No location found", http.StatusInternalServerError)
 
 			return
 		}
@@ -390,44 +389,51 @@ func (env *Env) OTLastPosHandler(c *gin.Context) {
 			}
 		}
 
-		c.JSON(200, filteredLocations)
+		respondJSON(w, http.StatusOK, filteredLocations)
 	}
 }
 
 const iso8061fmt = "2006-01-02T15:04:05"
 
-func (env *Env) OTLocationsHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+func (env *Env) OTLocationsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
-	from := c.DefaultQuery("from", time.Now().AddDate(0, 0, -1).Format(iso8061fmt))
-	to := c.DefaultQuery("to", time.Now().Format(iso8061fmt))
+	from := r.URL.Query().Get("from")
+	if from == "" {
+		from = time.Now().AddDate(0, 0, -1).Format(iso8061fmt)
+	}
+
+	to := r.URL.Query().Get("to")
+	if to == "" {
+		to = time.Now().Format(iso8061fmt)
+	}
 
 	fromTime, err := time.Parse(iso8061fmt, from)
 	if err != nil {
-		c.String(400, fmt.Sprintf("Invalid from time %v: %v", from, err))
+		http.Error(w, fmt.Sprintf("Invalid from time %v: %v", from, err), http.StatusBadRequest)
 
 		return
 	}
 
 	toTime, err := time.Parse(iso8061fmt, to)
 	if err != nil {
-		c.String(400, fmt.Sprintf("Invalid to time %v: %v", to, err))
+		http.Error(w, fmt.Sprintf("Invalid to time %v: %v", to, err), http.StatusBadRequest)
 
 		return
 	}
 
-	user := c.Query("user")
-	device := c.Query("device")
+	user := r.URL.Query().Get("user")
+	device := r.URL.Query().Get("device")
 
 	locations, err := env.GetLocationsBetweenDates(ctx, fromTime, toTime, user, device)
 	if err != nil {
-		c.String(500, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
 	if locations == nil {
-		c.String(500, "No locations found")
+		http.Error(w, "No locations found", http.StatusInternalServerError)
 
 		return
 	}
@@ -436,12 +442,14 @@ func (env *Env) OTLocationsHandler(c *gin.Context) {
 		Data []Location `json:"data"`
 	}{*locations}
 	responseBytes, _ := json.Marshal(response) //nolint:errchkjson
-	responseReader := bytes.NewReader(responseBytes)
-	c.DataFromReader(200, int64(len(responseBytes)), "application/json", responseReader, nil)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(responseBytes)
 }
 
-func OTVersionHandler(c *gin.Context) {
-	c.JSON(200, gin.H{"version": "1.0-owntracks-pg-recorder"})
+func OTVersionHandler(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]any{"version": "1.0-owntracks-pg-recorder"})
 }
 
 var wsUpgrader = websocket.Upgrader{
@@ -497,29 +505,26 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 }
 
 //nolint:cyclop,funlen
-func (env *Env) PlaceHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+func (env *Env) PlaceHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	if env.database == nil {
-		c.String(500, "No database connection available")
-		c.Abort()
+		http.Error(w, "No database connection available", http.StatusInternalServerError)
 
 		return
 	}
 
-	place := c.PostForm("place")
+	place := r.FormValue("place")
 
 	geocoding, err := env.GetGeocoding(ctx, place)
 	if err != nil {
 		InternalError(ctx, err)
-		c.String(500, err.Error())
-		c.Abort()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 
 	if len(geocoding.Features) == 0 {
-		c.HTML(200, "placeResults.gohtml", gin.H{"results": nil, "place": place})
-		c.Abort()
+		env.respondHTML(w, "placeResults.gohtml", map[string]any{"results": nil, "place": place})
 
 		return
 	}
@@ -588,16 +593,14 @@ group by date (devicetimestamp)
 order by c desc limit 20
 `, feature.Geometry.Point[0], feature.Geometry.Point[1], radius)
 	} else {
-		c.String(500, "No valid geometries found in geocoding response", geocoding)
-		c.Abort()
+		http.Error(w, "No valid geometries found in geocoding response", http.StatusInternalServerError)
 
 		return
 	}
 
 	if err != nil {
 		InternalError(ctx, err)
-		c.String(500, err.Error())
-		c.Abort()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -608,8 +611,7 @@ order by c desc limit 20
 
 	if rows.Err() != nil {
 		InternalError(ctx, rows.Err())
-		c.String(500, rows.Err().Error())
-		c.Abort()
+		http.Error(w, rows.Err().Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -622,8 +624,7 @@ order by c desc limit 20
 		err := rows.Scan(&result.LocationCount, &result.Date)
 		if err != nil {
 			InternalError(ctx, err)
-			c.String(500, "Error fetching values from database: %v", err)
-			c.Abort()
+			http.Error(w, fmt.Sprintf("Error fetching values from database: %v", err), http.StatusInternalServerError)
 
 			return
 		}
@@ -631,10 +632,10 @@ order by c desc limit 20
 		results = append(results, result)
 	}
 
-	c.HTML(
-		200,
+	env.respondHTML(
+		w,
 		"placeResults.gohtml",
-		gin.H{"results": results, "place": place, "formatted": feature.Properties["formatted"]},
+		map[string]any{"results": results, "place": place, "formatted": feature.Properties["formatted"]},
 	)
 }
 
@@ -648,10 +649,10 @@ type LocationWithMetadata struct {
 	Speed     float64
 }
 
-func (env *Env) DeleteLocationPoint(c *gin.Context) {
-	id := c.Param("id")
+func (env *Env) DeleteLocationPoint(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 	slog.With("id", id).
-		InfoContext(c.Request.Context(), "Deleting point")
+		InfoContext(r.Context(), "Deleting point")
 
 	query := `DELETE
 FROM locations
@@ -662,17 +663,16 @@ where id = $1
 	if err != nil {
 		slog.With("err", err).
 			With("id", id).
-			ErrorContext(c.Request.Context(), "Error deleting point from database")
-		c.String(http.StatusInternalServerError, "Error deleting point from database %v", err)
-		c.Abort()
+			ErrorContext(r.Context(), "Error deleting point from database")
+		http.Error(w, fmt.Sprintf("Error deleting point from database %v", err), http.StatusInternalServerError)
 	} else {
-		c.Status(http.StatusOK)
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
-func (env *Env) GetPointsForDate(c *gin.Context) {
-	ctx := c.Request.Context()
-	date := c.Param("date")
+func (env *Env) GetPointsForDate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	date := chi.URLParam(r, "date")
 	//nolint:lll
 	query := `SELECT id,
        devicetimestamp,
@@ -692,7 +692,7 @@ ORDER BY devicetimestamp `
 	if err != nil {
 		slog.With("err", err).
 			ErrorContext(ctx, "Error querying points from database")
-		_ = c.Error(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -702,8 +702,7 @@ ORDER BY devicetimestamp `
 	if rows.Err() != nil {
 		slog.With("err", rows.Err()).
 			ErrorContext(ctx, "Error querying points from database")
-
-		_ = c.Error(rows.Err())
+		http.Error(w, rows.Err().Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -723,7 +722,7 @@ ORDER BY devicetimestamp `
 			&location.Speed,
 		)
 		if err != nil {
-			_ = c.Error(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			return
 		}
@@ -731,10 +730,10 @@ ORDER BY devicetimestamp `
 		locations = append(locations, location)
 	}
 
-	c.HTML(200, "points.gohtml", gin.H{"date": date, "results": locations})
+	env.respondHTML(w, "points.gohtml", map[string]any{"date": date, "results": locations})
 }
 
-func (env *Env) GetInaccurateLocationPoints(c *gin.Context) {
+func (env *Env) GetInaccurateLocationPoints(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(`SELECT
     id,
     devicetimestamp,
@@ -752,7 +751,7 @@ ORDER BY speed DESC LIMIT %d
 
 	rows, err := env.database.Query(query)
 	if err != nil {
-		_ = c.Error(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -760,7 +759,7 @@ ORDER BY speed DESC LIMIT %d
 	defer func() { _ = rows.Close() }()
 
 	if rows.Err() != nil {
-		_ = c.Error(rows.Err())
+		http.Error(w, rows.Err().Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -780,7 +779,7 @@ ORDER BY speed DESC LIMIT %d
 			&location.Speed,
 		)
 		if err != nil {
-			_ = c.Error(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			return
 		}
@@ -789,12 +788,12 @@ ORDER BY speed DESC LIMIT %d
 	}
 
 	if locations == nil {
-		c.String(404, "No locations found")
+		http.Error(w, "No locations found", http.StatusNotFound)
 
 		return
 	}
 
-	c.HTML(200, "inaccurateLocations.gohtml", gin.H{"results": locations})
+	env.respondHTML(w, "inaccurateLocations.gohtml", map[string]any{"results": locations})
 }
 
 type (
@@ -863,22 +862,19 @@ func renderDeviceRecordAsGeoJSON(deviceRecord DeviceRecord) *geojson.Feature {
 	return feature
 }
 
-func writeExportHTTPHeader(c *gin.Context, filename string) *gzip.Writer {
-	writer := c.Writer
-	header := writer.Header()
+func writeExportHTTPHeader(w http.ResponseWriter, filename string) *gzip.Writer {
+	header := w.Header()
 	header.Set("Content-Type", "application/json")
 	header.Set("Content-Disposition", "attachment; filename="+filename)
 	header.Set("Transfer-Encoding", "chunked")
 	header.Set("Content-Encoding", "gzip")
-	writer.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusOK)
 
-	if flusher, ok := writer.(http.Flusher); ok {
+	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
 
-	gzipWriter := gzip.NewWriter(writer)
-
-	return gzipWriter
+	return gzip.NewWriter(w)
 }
 
 const featureCollectionHeader = `{"type":"FeatureCollection", "features":[`
@@ -887,27 +883,27 @@ const featureCollectionFooter = `]}`
 // ExportGeoJSON exports location data as a GeoJSON file.
 //
 //nolint:funlen
-func (env *Env) ExportGeoJSON(c *gin.Context) {
-	fromParam := c.Param("from")
-	toParam := c.Param("to")
+func (env *Env) ExportGeoJSON(w http.ResponseWriter, r *http.Request) {
+	fromParam := chi.URLParam(r, "from")
+	toParam := chi.URLParam(r, "to")
 
 	from, err := time.Parse(time.RFC3339, fromParam)
 	if err != nil {
-		_ = c.Error(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
 
 	to, err := time.Parse(time.RFC3339, toParam)
 	if err != nil {
-		_ = c.Error(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
 
 	rows, err := env.getPoints(&from, &to)
 	if err != nil {
-		_ = c.Error(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -915,18 +911,19 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 	defer func() { _ = rows.Close() }()
 
 	if rows.Err() != nil {
-		_ = c.Error(rows.Err())
+		http.Error(w, rows.Err().Error(), http.StatusInternalServerError)
 
 		return
 	}
 
-	writer := c.Writer
-	gzipWriter := writeExportHTTPHeader(c, "owntracks-geojson.json")
+	gzipWriter := writeExportHTTPHeader(w, "owntracks-geojson.json")
 
 	defer func() {
 		_ = gzipWriter.Close()
 
-		writer.Flush()
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
 	}()
 
 	counter := 0
@@ -953,14 +950,14 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 		)
 		if err != nil {
 			slog.With("err", err).
-				ErrorContext(c.Request.Context(), "Error scanning row")
+				ErrorContext(r.Context(), "Error scanning row")
 		} else {
 			feature := renderDeviceRecordAsGeoJSON(deviceRecord)
 
 			featureBytes, err := feature.MarshalJSON()
 			if err != nil {
 				slog.With("err", err).
-					ErrorContext(c.Request.Context(), "Error marshalling feature to JSON")
+					ErrorContext(r.Context(), "Error marshalling feature to JSON")
 			} else {
 				if counter > 0 {
 					_, _ = gzipWriter.Write([]byte(","))
@@ -972,11 +969,29 @@ func (env *Env) ExportGeoJSON(c *gin.Context) {
 
 		if counter%100 == 0 {
 			_ = gzipWriter.Flush()
-			writer.Flush()
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
 		}
 
 		counter++
 	}
 
 	_, _ = gzipWriter.Write([]byte(featureCollectionFooter))
+}
+
+func respondJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.With("err", err).Error("Failed to encode JSON response")
+	}
+}
+
+func (env *Env) respondHTML(w http.ResponseWriter, name string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := env.tmpl.ExecuteTemplate(w, name, data); err != nil {
+		slog.With("err", err).Error("Failed to execute template")
+		http.Error(w, "Template error", http.StatusInternalServerError)
+	}
 }

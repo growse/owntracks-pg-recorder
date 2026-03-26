@@ -2,73 +2,50 @@ package main
 
 import (
 	"embed"
-	"fmt"
 	"html/template"
 	"net/http"
-	"strings"
-	_ "time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 //go:embed templates/*
 var embedFs embed.FS
 
-func (env *Env) BuildRoutes(configuration *Configuration, router *gin.Engine) {
-	router.Use(ErrorHandler)
-	router.SetHTMLTemplate(template.Must(template.New("").ParseFS(embedFs, "templates/*.gohtml")))
+func (env *Env) BuildRoutes(configuration *Configuration) http.Handler {
+	env.tmpl = template.Must(template.New("").ParseFS(embedFs, "templates/*.gohtml"))
+
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
 
 	if configuration.EnablePrometheus {
-		router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+		r.Handle("/metrics", promhttp.Handler())
 	}
 
-	router.GET("place/", func(c *gin.Context) {
-		c.HTML(200, "place.gohtml", nil)
+	r.Get("/place/", func(w http.ResponseWriter, r *http.Request) {
+		env.respondHTML(w, "place.gohtml", nil)
 	})
-	router.POST("place/", env.PlaceHandler)
+	r.Post("/place/", env.PlaceHandler)
+	r.Get("/inaccurate/", env.GetInaccurateLocationPoints)
+	r.Delete("/points/{id}", env.DeleteLocationPoint)
+	r.Get("/points/{date}", env.GetPointsForDate)
+	r.Get("/export/geojson/{from}/{to}", env.ExportGeoJSON)
 
-	router.GET("inaccurate/", env.GetInaccurateLocationPoints)
-	router.DELETE("points/:id", env.DeleteLocationPoint)
-	router.GET("points/:date", env.GetPointsForDate)
+	r.Route("/api/0", func(r chi.Router) {
+		r.Get("/list", env.OTListUserHandler)
+		r.Get("/last", env.OTLastPosHandler)
+		r.Get("/locations", env.OTLocationsHandler)
+		r.Get("/version", OTVersionHandler)
+	})
 
-	router.GET("export/geojson/:from/:to", env.ExportGeoJSON)
+	r.Get("/ws/last", func(w http.ResponseWriter, r *http.Request) {
+		env.wshandler(w, r)
+	})
 
-	otRecorderAPI := router.Group("api/")
-	{
-		restAPI := otRecorderAPI.Group("/0")
-		{
-			restAPI.GET("list", env.OTListUserHandler)
-			restAPI.GET("last", env.OTLastPosHandler)
-			restAPI.GET("locations", env.OTLocationsHandler)
-			restAPI.GET("version", OTVersionHandler)
-		}
-	}
+	r.Get("/location/", env.LocationHandler)
+	r.Head("/location/", env.LocationHeadHandler)
 
-	wsAPI := router.Group("ws")
-	{
-		wsAPI.GET("last", func(c *gin.Context) {
-			env.wshandler(c.Writer, c.Request)
-		})
-	}
-
-	router.GET("/location/", env.LocationHandler)
-	router.HEAD("/location/", env.LocationHeadHandler)
-}
-
-func ErrorHandler(c *gin.Context) {
-	c.Next()
-
-	errors := ""
-
-	var errorsSb63 strings.Builder
-	for _, err := range c.Errors {
-		fmt.Fprintf(&errorsSb63, "%v\n", err)
-	}
-
-	errors += errorsSb63.String()
-
-	if errors != "" {
-		c.String(http.StatusInternalServerError, "Many errors\n%s", errors)
-	}
+	return r
 }

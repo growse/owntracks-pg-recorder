@@ -111,6 +111,17 @@ func run(ctx context.Context, _ []string) error {
 			go env.GeocodingCrawler(ctx)
 		}
 
+		if env.configuration.DawarichURL != "" {
+			DawarichForwardQueue = make(chan MQTTMsg, 100)
+
+			go func() {
+				<-ctx.Done()
+				close(DawarichForwardQueue)
+			}()
+
+			go env.ForwardToDawarich(ctx, DawarichForwardQueue)
+		}
+
 		env.DoDatabaseMigrations(ctx)
 
 		go func() {
@@ -197,4 +208,63 @@ func (env *Env) setupDatabase(ctx context.Context) error {
 	env.database = database
 
 	return nil
+}
+
+func runSyncDawarich(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("sync-dawarich", flag.ExitOnError)
+	startFlag := fs.String("start", "", "Start time in RFC3339 format (optional)")
+	endFlag := fs.String("end", "", "End time in RFC3339 format (optional)")
+
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("parsing flags: %w", err)
+	}
+
+	configuration, err := getConfiguration()
+	if err != nil {
+		return fmt.Errorf("loading configuration: %w", err)
+	}
+
+	if configuration.DawarichURL == "" {
+		return errors.New("DawarichURL is not set in configuration")
+	}
+
+	if configuration.Debug {
+		slog.SetDefault(
+			slog.New(slog.NewTextHandler(
+				os.Stdout,
+				&slog.HandlerOptions{Level: slog.LevelDebug},
+			)),
+		)
+	}
+
+	env := &Env{
+		configuration: configuration,
+		metrics:       NewMetrics(),
+	}
+
+	if err := env.setupDatabase(ctx); err != nil {
+		return fmt.Errorf("database setup failed: %w", err)
+	}
+
+	defer env.closeDatabase(ctx)
+
+	var start time.Time
+
+	if *startFlag != "" {
+		start, err = time.Parse(time.RFC3339, *startFlag)
+		if err != nil {
+			return fmt.Errorf("parsing --start: %w", err)
+		}
+	}
+
+	end := time.Now()
+
+	if *endFlag != "" {
+		end, err = time.Parse(time.RFC3339, *endFlag)
+		if err != nil {
+			return fmt.Errorf("parsing --end: %w", err)
+		}
+	}
+
+	return env.SyncToDawarich(ctx, start, end)
 }

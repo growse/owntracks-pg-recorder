@@ -121,6 +121,15 @@ Optional reverse geocoding via a [Nominatim](https://nominatim.org/) instance. T
 | `OT_PG_RECORDER_ENABLEPROMETHEUS` | `false` | Expose a `/metrics` endpoint for Prometheus scraping |
 | `OT_PG_RECORDER_DEBUG` | `false` | Enable debug-level logging |
 
+## Dawarich Integration
+
+Locations can be forwarded to a [Dawarich](https://dawarich.app) instance in real-time as they arrive from MQTT. Forwarding is asynchronous and never blocks MQTT processing.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OT_PG_RECORDER_DAWARICHURL` | | Base URL of your Dawarich instance (e.g. `http://dawarich:3000`). Forwarding is disabled when not set. |
+| `OT_PG_RECORDER_DAWARICHAPIKEY` | | Dawarich API key (found in your Dawarich profile settings) |
+
 ## HTTP API
 
 The service exposes an HTTP API compatible with the OwnTracks Recorder.

@@ -311,5 +311,14 @@ RETURNING id`,
 		GeocodingWorkQueue <- lastInsertID
 	}
 
+	if DawarichForwardQueue != nil {
+		select {
+		case DawarichForwardQueue <- locationMessage:
+		default:
+			slog.With("id", lastInsertID).
+				WarnContext(ctx, "Dawarich forward queue full, dropping location")
+		}
+	}
+
 	return nil
 }

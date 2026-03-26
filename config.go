@@ -26,6 +26,8 @@ type Configuration struct {
 	DefaultUser            string `default:""                      split_words:"false"`
 	GeocodeOnInsert        bool   `default:"false"                 split_words:"true"`
 	EnablePrometheus       bool   `default:"false"                 split_words:"true"`
+	DawarichURL            string `default:""                      split_words:"false"`
+	DawarichAPIKey         string `default:""                      split_words:"false"`
 }
 
 func getConfiguration() (*Configuration, error) {

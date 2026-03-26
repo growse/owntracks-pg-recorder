@@ -75,7 +75,12 @@ func run(ctx context.Context, _ []string) error {
 		return errInvalidConfig
 	}
 
-	env := &Env{database: nil, configuration: configuration, metrics: NewMetrics()}
+	env := &Env{
+		database:      nil,
+		configuration: configuration,
+		metrics:       NewMetrics(),
+		insertSem:     make(chan struct{}, configuration.MaxDBOpenConnections),
+	}
 
 	if env.configuration.Debug {
 		slog.SetDefault(

@@ -75,6 +75,7 @@ func (env *Env) SubscribeMQTT(ctx context.Context) error {
 	mqttClientOptions.ResumeSubs = true
 	mqttClientOptions.ProtocolVersion = 4
 	mqttClientOptions.SetAutoReconnect(true)
+	mqttClientOptions.SetOrderMatters(false)
 	mqttClientOptions.ClientID = env.configuration.MQTTClientID
 	mqttClientOptions.SetConnectionLostHandler(connectionLostHandler)
 	mqttClientOptions.SetReconnectingHandler(reconnectingHandler)
@@ -197,31 +198,40 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	slog.With("timestamp", locationMessage.DeviceTimestamp.String()).
-		With("messageId", locationMessage.MessageID).
-		InfoContext(ctx, "Inserting into database")
+	// Acquire semaphore slot then process in a goroutine so the MQTT library
+	// can dispatch the next message immediately.
+	env.insertSem <- struct{}{}
 
-	insertFunc := func() (any, error) {
-		err2 := insertToDatabase(ctx,
-			env.configuration.GeocodeOnInsert,
-			env.configuration.EnablePrometheus,
-			env.metrics,
-			locationMessage,
-			msg,
-			env.database,
-		)
+	go func() {
+		defer func() { <-env.insertSem }()
 
-		return nil, err2
-	}
-
-	_, err = backoff.Retry(ctx, insertFunc, backoff.WithMaxElapsedTime(1*time.Minute))
-	if err != nil {
-		slog.With("err", err).
-			With("timestamp", locationMessage.DeviceTimestamp.String()).
+		slog.With("timestamp", locationMessage.DeviceTimestamp.String()).
 			With("messageId", locationMessage.MessageID).
-			ErrorContext(ctx, "unable to insert location message to database")
-		msg.Ack()
-	}
+			InfoContext(ctx, "Inserting into database")
+
+		insertFunc := func() (any, error) {
+			err2 := insertToDatabase(ctx,
+				env.configuration.GeocodeOnInsert,
+				env.configuration.EnablePrometheus,
+				env.metrics,
+				locationMessage,
+				msg,
+				env.database,
+			)
+
+			return nil, err2
+		}
+
+		_, err = backoff.Retry(ctx, insertFunc, backoff.WithMaxElapsedTime(1*time.Minute))
+		if err != nil {
+			slog.With("err", err).
+				With("timestamp", locationMessage.DeviceTimestamp.String()).
+				With("messageId", locationMessage.MessageID).
+				With("payload", string(msg.Payload())).
+				ErrorContext(ctx, "unable to insert location message to database after retries; panicking")
+			panic(fmt.Sprintf("unrecoverable MQTT insert failure: %v", err))
+		}
+	}()
 }
 
 //nolint:funlen
@@ -280,8 +290,11 @@ RETURNING id`,
 		var dbErr *pq.Error
 		if errors.As(err, &dbErr) {
 			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
-				// We're skipping this point
+				// Duplicate point — skip it and move on.
 				slog.With("err", dbErr).
+					With("devicetimestamp",locationMessage.DeviceTimestamp.String()).
+					With("lat",locationMessage.Latitude).
+					With("lon",locationMessage.Longitude).
 					WarnContext(ctx, "Could not insert location: integrity_constraint_violation")
 				msg.Ack()
 
@@ -296,6 +309,12 @@ RETURNING id`,
 
 			return err
 		}
+
+		// Non-postgres error (network, driver, etc.) — return for retry.
+		slog.With("err", err).
+			ErrorContext(ctx, "Unexpected error inserting location")
+
+		return err
 	}
 
 	msg.Ack()

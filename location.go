@@ -593,7 +593,11 @@ group by date (devicetimestamp)
 order by c desc limit 20
 `, feature.Geometry.Point[0], feature.Geometry.Point[1], radius)
 	} else {
-		http.Error(w, "No valid geometries found in geocoding response", http.StatusInternalServerError)
+		http.Error(
+			w,
+			"No valid geometries found in geocoding response",
+			http.StatusInternalServerError,
+		)
 
 		return
 	}
@@ -624,7 +628,11 @@ order by c desc limit 20
 		err := rows.Scan(&result.LocationCount, &result.Date)
 		if err != nil {
 			InternalError(ctx, err)
-			http.Error(w, fmt.Sprintf("Error fetching values from database: %v", err), http.StatusInternalServerError)
+			http.Error(
+				w,
+				fmt.Sprintf("Error fetching values from database: %v", err),
+				http.StatusInternalServerError,
+			)
 
 			return
 		}
@@ -635,7 +643,11 @@ order by c desc limit 20
 	env.respondHTML(
 		w,
 		"placeResults.gohtml",
-		map[string]any{"results": results, "place": place, "formatted": feature.Properties["formatted"]},
+		map[string]any{
+			"results":   results,
+			"place":     place,
+			"formatted": feature.Properties["formatted"],
+		},
 	)
 }
 
@@ -664,7 +676,11 @@ where id = $1
 		slog.With("err", err).
 			With("id", id).
 			ErrorContext(r.Context(), "Error deleting point from database")
-		http.Error(w, fmt.Sprintf("Error deleting point from database %v", err), http.StatusInternalServerError)
+		http.Error(
+			w,
+			fmt.Sprintf("Error deleting point from database %v", err),
+			http.StatusInternalServerError,
+		)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}

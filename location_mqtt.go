@@ -292,9 +292,9 @@ RETURNING id`,
 			if dbErr.Code.Class().Name() == "integrity_constraint_violation" {
 				// Duplicate point — skip it and move on.
 				slog.With("err", dbErr).
-					With("devicetimestamp",locationMessage.DeviceTimestamp.String()).
-					With("lat",locationMessage.Latitude).
-					With("lon",locationMessage.Longitude).
+					With("devicetimestamp", locationMessage.DeviceTimestamp.String()).
+					With("lat", locationMessage.Latitude).
+					With("lon", locationMessage.Longitude).
 					WarnContext(ctx, "Could not insert location: integrity_constraint_violation")
 				msg.Ack()
 

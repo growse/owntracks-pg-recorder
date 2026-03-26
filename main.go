@@ -208,9 +208,27 @@ func (env *Env) setupDatabase(ctx context.Context) error {
 	slog.InfoContext(ctx, "Database connected")
 
 	database.SetMaxOpenConns(env.configuration.MaxDBOpenConnections)
-	database.SetMaxIdleConns(1)
+	database.SetMaxIdleConns(env.configuration.MaxDBOpenConnections)
 	database.SetConnMaxLifetime(time.Hour)
 	env.database = database
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+				s := database.Stats()
+				slog.DebugContext(ctx, "db pool stats",
+					"open", s.OpenConnections,
+					"in_use", s.InUse,
+					"idle", s.Idle,
+					"wait_count", s.WaitCount,
+					"wait_duration", s.WaitDuration,
+				)
+			}
+		}
+	}()
 
 	return nil
 }

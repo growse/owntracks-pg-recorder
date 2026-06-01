@@ -74,18 +74,20 @@ func (env *Env) SyncToDawarich(ctx context.Context, start, end time.Time) error 
 			device  string
 		)
 
-		if err := rows.Scan(
+		err := rows.Scan(
 			&tst, &devTime,
 			&lat, &lon,
 			&alt, &acc, &vac, &speed,
 			&battery, &conn, &cog,
 			&user, &device,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("scanning row: %w", err)
 		}
 
 		if _, exists := existing[tst]; exists {
 			skipped++
+
 			continue
 		}
 
@@ -124,7 +126,8 @@ func (env *Env) SyncToDawarich(ctx context.Context, start, end time.Time) error 
 			msg.Course = int(cog.Int64)
 		}
 
-		if err := env.sendLocationToDawarich(ctx, msg); err != nil {
+		err = env.sendLocationToDawarich(ctx, msg)
+		if err != nil {
 			slog.With("err", err, "tst", devTime, "user", user, "device", device).
 				WarnContext(ctx, "Failed to post point to Dawarich, skipping")
 		} else {
@@ -185,6 +188,7 @@ func (env *Env) fetchDawarichTimestamps(
 
 		decodeErr := json.NewDecoder(resp.Body).Decode(&points)
 		_ = resp.Body.Close()
+
 		cancel()
 
 		if decodeErr != nil {

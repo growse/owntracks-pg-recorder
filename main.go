@@ -40,10 +40,13 @@ func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "sync-dawarich" || os.Args[2] == "sync-dawarich") {
 		ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer cancelFunc()
-		if err := runSyncDawarich(ctx, os.Args[2:]); err != nil {
+
+		err := runSyncDawarich(ctx, os.Args[2:])
+		if err != nil {
 			slog.With("err", err).ErrorContext(ctx, "Sync failed")
 			os.Exit(1)
 		}
+
 		return
 	}
 
@@ -150,12 +153,14 @@ func run(ctx context.Context, _ []string) error {
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 
 		slog.InfoContext(shutdownCtx, "Shutting down HTTP server")
 
-		if err := server.Shutdown(shutdownCtx); err != nil {
+		err := server.Shutdown(shutdownCtx)
+		if err != nil {
 			slog.With("err", err).ErrorContext(shutdownCtx, "Error shutting down HTTP server")
 		}
 	}()

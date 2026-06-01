@@ -46,7 +46,8 @@ func (env *Env) ForwardToDawarich(ctx context.Context, queue <-chan MQTTMsg) {
 			return
 		}
 
-		if err := env.sendLocationToDawarich(ctx, msg); err != nil {
+		err := env.sendLocationToDawarich(ctx, msg)
+		if err != nil {
 			slog.With("err", err).
 				With("user", msg.User).
 				With("device", msg.Device).

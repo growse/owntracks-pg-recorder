@@ -272,7 +272,7 @@ func (env *Env) LocationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set(
-		"Last-modified",
+		"Last-Modified",
 		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
 	respondJSON(w, http.StatusOK, map[string]any{
@@ -294,7 +294,7 @@ func (env *Env) LocationHeadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set(
-		"Last-modified",
+		"Last-Modified",
 		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
 	w.WriteHeader(http.StatusOK)
@@ -507,6 +507,7 @@ func (env *Env) wshandler(w http.ResponseWriter, r *http.Request) {
 //nolint:cyclop,funlen
 func (env *Env) PlaceHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	if env.database == nil {
 		http.Error(w, "No database connection available", http.StatusInternalServerError)
 
@@ -999,14 +1000,18 @@ func (env *Env) ExportGeoJSON(w http.ResponseWriter, r *http.Request) {
 func respondJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+
+	err := json.NewEncoder(w).Encode(v)
+	if err != nil {
 		slog.With("err", err).Error("Failed to encode JSON response")
 	}
 }
 
 func (env *Env) respondHTML(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := env.tmpl.ExecuteTemplate(w, name, data); err != nil {
+
+	err := env.tmpl.ExecuteTemplate(w, name, data)
+	if err != nil {
 		slog.With("err", err).Error("Failed to execute template")
 		http.Error(w, "Template error", http.StatusInternalServerError)
 	}

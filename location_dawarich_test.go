@@ -105,8 +105,10 @@ func TestForwardToDawarich_DrainAndShutdown(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p dawarichPayload
+
 		_ = json.NewDecoder(r.Body).Decode(&p)
 		received = append(received, p.Topic)
+
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -126,7 +128,9 @@ func TestForwardToDawarich_DrainAndShutdown(t *testing.T) {
 	msg2.Device = "android"
 
 	queue <- msg1
+
 	queue <- msg2
+
 	close(queue)
 
 	env.ForwardToDawarich(context.Background(), queue)

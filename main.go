@@ -37,7 +37,7 @@ type Env struct {
 func main() {
 	ctx := context.Background()
 
-	if len(os.Args) > 1 && os.Args[1] == "sync-dawarich" {
+	if len(os.Args) > 1 && (os.Args[1] == "sync-dawarich" || os.Args[2] == "sync-dawarich") {
 		ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer cancelFunc()
 		if err := runSyncDawarich(ctx, os.Args[2:]); err != nil {
@@ -211,24 +211,6 @@ func (env *Env) setupDatabase(ctx context.Context) error {
 	database.SetMaxIdleConns(env.configuration.MaxDBOpenConnections)
 	database.SetConnMaxLifetime(time.Hour)
 	env.database = database
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(5 * time.Second):
-				s := database.Stats()
-				slog.DebugContext(ctx, "db pool stats",
-					"open", s.OpenConnections,
-					"in_use", s.InUse,
-					"idle", s.Idle,
-					"wait_count", s.WaitCount,
-					"wait_duration", s.WaitDuration,
-				)
-			}
-		}
-	}()
 
 	return nil
 }

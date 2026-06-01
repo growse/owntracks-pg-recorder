@@ -125,10 +125,10 @@ func (env *Env) SyncToDawarich(ctx context.Context, start, end time.Time) error 
 		}
 
 		if err := env.sendLocationToDawarich(ctx, msg); err != nil {
-			slog.With("err", err, "tst", tst, "user", user, "device", device).
+			slog.With("err", err, "tst", devTime, "user", user, "device", device).
 				WarnContext(ctx, "Failed to post point to Dawarich, skipping")
 		} else {
-			slog.With("tst", tst, "user", user, "device", device).
+			slog.With("tst", devTime, "user", user, "device", device).
 				DebugContext(ctx, "Posted missing point to Dawarich")
 
 			posted++

@@ -17,6 +17,7 @@ linters:
     - musttag
     - nestif
     - gochecknoglobals
+    - gomodguard
 
 formatters:
   enable:

@@ -42,7 +42,7 @@ func TestSendLocationToDawarich_Success(t *testing.T) {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 		err := json.NewDecoder(r.Body).Decode(&received)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 
 		w.WriteHeader(http.StatusOK)
 	}))

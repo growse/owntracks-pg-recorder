@@ -250,7 +250,7 @@ func (env *Env) UpdateLocationWithGeocoding(ctx context.Context, queue <-chan in
 			slog.With("locationID", locationID).
 				InfoContext(ctx, "Updating geocoding for entry")
 
-			location := Location{Type: "location"}
+			location := Location{Type: locationType}
 
 			err := env.database.QueryRow(`select ST_Y(ST_AsText(point)), ST_X(ST_AsText(point))
 from locations
@@ -304,7 +304,7 @@ func (env *Env) GeocodingCrawler(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			location := Location{Type: "location"}
+			location := Location{Type: locationType}
 
 			var locationID int
 

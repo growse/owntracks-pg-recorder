@@ -170,7 +170,7 @@ func (env *Env) mqttMessageHandler(_ mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	if locationMessage.Type != "location" {
+	if locationMessage.Type != locationType {
 		slog.With("msgType", locationMessage.Type).
 			With("topic", msg.Topic()).
 			InfoContext(ctx, "Skipping received message")

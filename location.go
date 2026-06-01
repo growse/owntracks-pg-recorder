@@ -24,6 +24,9 @@ This should be some sort of thing that's sent from the phone
 
 const NumberOfInaccuratePoints = 20
 
+const locationType = "location"
+const resultsKey = "results"
+
 //nolint:tagliatelle
 type Location struct {
 	Timestamp        int64   `binding:"required" json:"tst"`
@@ -75,7 +78,7 @@ order by "user", devicetimestamp desc`
 	var locations []Location
 
 	for rows.Next() {
-		location := Location{Type: "location"}
+		location := Location{Type: locationType}
 
 		var (
 			geocodingMaybe sql.NullString
@@ -131,7 +134,7 @@ func (env *Env) GetLastLocationForUser(ctx context.Context, user string) (*Locat
 from locations
 where "user" = $1
 order by devicetimestamp desc limit 1`
-	location := Location{Type: "location"}
+	location := Location{Type: locationType}
 
 	var (
 		geocodingMaybe sql.NullString
@@ -226,7 +229,7 @@ order by devicetimestamp desc`
 	)
 
 	for rows.Next() {
-		location := Location{Type: "location"}
+		location := Location{Type: locationType}
 		err := rows.Scan(
 			&location.Geocoding,
 			&location.Latitude,
@@ -275,7 +278,7 @@ func (env *Env) LocationHandler(w http.ResponseWriter, r *http.Request) {
 		"Last-Modified",
 		time.Unix(location.Timestamp, 0).Format("Mon, 02 Jan 2006 15:04:05 GMT"),
 	)
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, map[string]any{
 		"name":          location.GeocodedName(ctx),
 		"latitude":      fmt.Sprintf("%.2f", location.Latitude),
 		"longitude":     fmt.Sprintf("%.2f", location.Longitude),
@@ -345,8 +348,8 @@ func (env *Env) OTListUserHandler(w http.ResponseWriter, r *http.Request) {
 		results = append(results, user)
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
-		"results": results,
+	respondJSON(w, map[string]any{
+		resultsKey: results,
 	})
 }
 
@@ -364,7 +367,7 @@ func (env *Env) OTLastPosHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		respondJSON(w, http.StatusOK, [1]*Location{location})
+		respondJSON(w, [1]*Location{location})
 	} else {
 		locations, err := env.GetLastLocations(ctx)
 		if err != nil {
@@ -389,7 +392,7 @@ func (env *Env) OTLastPosHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		respondJSON(w, http.StatusOK, filteredLocations)
+		respondJSON(w, filteredLocations)
 	}
 }
 
@@ -449,7 +452,7 @@ func (env *Env) OTLocationsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func OTVersionHandler(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, map[string]any{"version": "1.0-owntracks-pg-recorder"})
+	respondJSON(w, map[string]any{"version": "1.0-owntracks-pg-recorder"})
 }
 
 var wsUpgrader = websocket.Upgrader{
@@ -514,6 +517,7 @@ func (env *Env) PlaceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	place := r.FormValue("place")
 
 	geocoding, err := env.GetGeocoding(ctx, place)
@@ -525,7 +529,7 @@ func (env *Env) PlaceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(geocoding.Features) == 0 {
-		env.respondHTML(w, "placeResults.gohtml", map[string]any{"results": nil, "place": place})
+		env.respondHTML(w, "placeResults.gohtml", map[string]any{resultsKey: nil, "place": place})
 
 		return
 	}
@@ -645,7 +649,7 @@ order by c desc limit 20
 		w,
 		"placeResults.gohtml",
 		map[string]any{
-			"results":   results,
+			resultsKey:  results,
 			"place":     place,
 			"formatted": feature.Properties["formatted"],
 		},
@@ -747,7 +751,7 @@ ORDER BY devicetimestamp `
 		locations = append(locations, location)
 	}
 
-	env.respondHTML(w, "points.gohtml", map[string]any{"date": date, "results": locations})
+	env.respondHTML(w, "points.gohtml", map[string]any{"date": date, resultsKey: locations})
 }
 
 func (env *Env) GetInaccurateLocationPoints(w http.ResponseWriter, r *http.Request) {
@@ -810,7 +814,7 @@ ORDER BY speed DESC LIMIT %d
 		return
 	}
 
-	env.respondHTML(w, "inaccurateLocations.gohtml", map[string]any{"results": locations})
+	env.respondHTML(w, "inaccurateLocations.gohtml", map[string]any{resultsKey: locations})
 }
 
 type (
@@ -899,7 +903,7 @@ const featureCollectionFooter = `]}`
 
 // ExportGeoJSON exports location data as a GeoJSON file.
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (env *Env) ExportGeoJSON(w http.ResponseWriter, r *http.Request) {
 	fromParam := chi.URLParam(r, "from")
 	toParam := chi.URLParam(r, "to")
@@ -997,9 +1001,9 @@ func (env *Env) ExportGeoJSON(w http.ResponseWriter, r *http.Request) {
 	_, _ = gzipWriter.Write([]byte(featureCollectionFooter))
 }
 
-func respondJSON(w http.ResponseWriter, status int, v any) {
+func respondJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 
 	err := json.NewEncoder(w).Encode(v)
 	if err != nil {

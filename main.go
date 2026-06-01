@@ -38,12 +38,14 @@ func main() {
 	ctx := context.Background()
 
 	if len(os.Args) > 1 && (os.Args[1] == "sync-dawarich" || os.Args[2] == "sync-dawarich") {
-		ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-		defer cancelFunc()
+		syncCtx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 
-		err := runSyncDawarich(ctx, os.Args[2:])
+		err := runSyncDawarich(syncCtx, os.Args[2:])
+
+		cancelFunc()
+
 		if err != nil {
-			slog.With("err", err).ErrorContext(ctx, "Sync failed")
+			slog.With("err", err).ErrorContext(syncCtx, "Sync failed")
 			os.Exit(1)
 		}
 
@@ -65,7 +67,7 @@ func main() {
 
 var errInvalidConfig = errors.New("invalid configuration")
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func run(ctx context.Context, _ []string) error {
 	ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancelFunc()
@@ -147,8 +149,9 @@ func run(ctx context.Context, _ []string) error {
 
 	// Get the router
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", env.configuration.Port),
-		Handler: env.BuildRoutes(configuration),
+		Addr:              fmt.Sprintf(":%d", env.configuration.Port),
+		Handler:           env.BuildRoutes(configuration),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
@@ -168,7 +171,8 @@ func run(ctx context.Context, _ []string) error {
 	slog.With("httpPort", env.configuration.Port).
 		InfoContext(ctx, "Listening on HTTP")
 
-	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err = server.ListenAndServe()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.With("err", err).ErrorContext(ctx, "Error starting server")
 
 		return err
@@ -225,7 +229,8 @@ func runSyncDawarich(ctx context.Context, args []string) error {
 	startFlag := fs.String("start", "", "Start time in RFC3339 format (optional)")
 	endFlag := fs.String("end", "", "End time in RFC3339 format (optional)")
 
-	if err := fs.Parse(args); err != nil {
+	err := fs.Parse(args)
+	if err != nil {
 		return fmt.Errorf("parsing flags: %w", err)
 	}
 
@@ -252,7 +257,8 @@ func runSyncDawarich(ctx context.Context, args []string) error {
 		metrics:       NewMetrics(),
 	}
 
-	if err := env.setupDatabase(ctx); err != nil {
+	err = env.setupDatabase(ctx)
+	if err != nil {
 		return fmt.Errorf("database setup failed: %w", err)
 	}
 

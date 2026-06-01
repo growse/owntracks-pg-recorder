@@ -63,7 +63,7 @@ func (env *Env) sendLocationToDawarich(ctx context.Context, msg MQTTMsg) error {
 	deviceTime := time.Unix(msg.DeviceTimestampAsInt, 0).UTC()
 
 	payload := dawarichPayload{
-		Type:         "location",
+		Type:         locationType,
 		Latitude:     msg.Latitude,
 		Longitude:    msg.Longitude,
 		Altitude:     msg.Altitude,

@@ -21,6 +21,8 @@ type dawarichAPIPoint struct {
 // SyncToDawarich compares all local DB points in the half-open interval
 // [start, end) against the points already stored in Dawarich and POSTs any
 // that are missing.  Progress is logged at INFO; per-point detail at DEBUG.
+//
+//nolint:cyclop,funlen
 func (env *Env) SyncToDawarich(ctx context.Context, start, end time.Time) error {
 	slog.With("start", start, "end", end).InfoContext(ctx, "Starting Dawarich sync")
 
@@ -53,7 +55,8 @@ func (env *Env) SyncToDawarich(ctx context.Context, start, end time.Time) error 
 	if err != nil {
 		return fmt.Errorf("querying database: %w", err)
 	}
-	defer rows.Close()
+
+	defer func() { _ = rows.Close() }()
 
 	var posted, skipped int
 
@@ -138,7 +141,8 @@ func (env *Env) SyncToDawarich(ctx context.Context, start, end time.Time) error 
 		}
 	}
 
-	if err := rows.Err(); err != nil {
+	err = rows.Err()
+	if err != nil {
 		return fmt.Errorf("iterating rows: %w", err)
 	}
 

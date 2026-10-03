@@ -76,6 +76,8 @@ github.com/martinlindhe/unit v0.0.0-20230420213220-4adfd7d0a0d6 h1:muzoir7BEy+lD
 github.com/martinlindhe/unit v0.0.0-20230420213220-4adfd7d0a0d6/go.mod h1:8QbxAolnDKw/JhUJMU80MRjHjEs0tLwkjZAPrTn+xLA=
 github.com/martinlindhe/unit v0.0.0-20260805114624-07488d1da8d9 h1:DvKfwfN/+hYVwMUGSt/sK7CJYxUaZBUdQJ30xlnGyIg=
 github.com/martinlindhe/unit v0.0.0-20260805114624-07488d1da8d9/go.mod h1:8QbxAolnDKw/JhUJMU80MRjHjEs0tLwkjZAPrTn+xLA=
+github.com/martinlindhe/unit v0.0.0-20261003202342-6951374f6703 h1:PtMW/zfVDAwAgx2R5FCY7eFo9hafMdBq8ocMGn4GO/M=
+github.com/martinlindhe/unit v0.0.0-20261003202342-6951374f6703/go.mod h1:8QbxAolnDKw/JhUJMU80MRjHjEs0tLwkjZAPrTn+xLA=
 github.com/moby/docker-image-spec v1.3.1 h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=
 github.com/moby/docker-image-spec v1.3.1/go.mod h1:eKmb5VW8vQEh/BAr2yvVNvuiJuY6UIocYsFu/DxxRpo=
 github.com/moby/term v0.5.0 h1:xt8Q1nalod/v7BqbG21f8mQPqH+xAaC9C3N3wfWbVP0=

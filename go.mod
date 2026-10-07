@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.12.3
-	github.com/martinlindhe/unit v0.0.0-20261004064707-50feaca62913
+	github.com/martinlindhe/unit v0.0.0-20261006175143-1ad5ae96e924
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/paulmach/go.geojson v1.5.0
 	github.com/prometheus/client_golang v1.24.1

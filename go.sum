@@ -80,6 +80,8 @@ github.com/martinlindhe/unit v0.0.0-20261003202342-6951374f6703 h1:PtMW/zfVDAwAg
 github.com/martinlindhe/unit v0.0.0-20261003202342-6951374f6703/go.mod h1:8QbxAolnDKw/JhUJMU80MRjHjEs0tLwkjZAPrTn+xLA=
 github.com/martinlindhe/unit v0.0.0-20261004064707-50feaca62913 h1:JP99MfNDYfifpONrXTQPE8AP1qTIK8hREz9bAU2OXrs=
 github.com/martinlindhe/unit v0.0.0-20261004064707-50feaca62913/go.mod h1:8QbxAolnDKw/JhUJMU80MRjHjEs0tLwkjZAPrTn+xLA=
+github.com/martinlindhe/unit v0.0.0-20261006175143-1ad5ae96e924 h1:8qI+76mfmkXWLeiwhYYZ/2VN8YovCXKL5Db9oh/nPoY=
+github.com/martinlindhe/unit v0.0.0-20261006175143-1ad5ae96e924/go.mod h1:8QbxAolnDKw/JhUJMU80MRjHjEs0tLwkjZAPrTn+xLA=
 github.com/moby/docker-image-spec v1.3.1 h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=
 github.com/moby/docker-image-spec v1.3.1/go.mod h1:eKmb5VW8vQEh/BAr2yvVNvuiJuY6UIocYsFu/DxxRpo=
 github.com/moby/term v0.5.0 h1:xt8Q1nalod/v7BqbG21f8mQPqH+xAaC9C3N3wfWbVP0=
